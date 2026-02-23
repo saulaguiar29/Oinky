@@ -52,7 +52,7 @@ function ProgressBar({ current, target }: { current: number; target: number }) {
 function GoalCard({ goal }: { goal: (typeof MOCK_GOALS)[0] }) {
   const pct = Math.round((goal.currentAmount / goal.targetAmount) * 100);
   return (
-    <Link href={`./goal/${goal._id}`} asChild>
+    <Link href={`/goal/${goal._id}`} asChild>
       <TouchableOpacity style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>{goal.title}</Text>
@@ -102,7 +102,7 @@ export default function DashboardScreen() {
         {/* Goals Section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Active Goals</Text>
-          <Link href="./(tabs)/goals" asChild>
+          <Link href="/(tabs)/goals" asChild>
             <TouchableOpacity>
               <Text style={styles.seeAll}>See all</Text>
             </TouchableOpacity>
@@ -114,7 +114,7 @@ export default function DashboardScreen() {
         ))}
 
         {/* Add Goal Button */}
-        <Link href="./goal/create" asChild>
+        <Link href="/goal/create" asChild>
           <TouchableOpacity style={styles.addButton}>
             <Ionicons name="add-circle" size={20} color={Colors.white} />
             <Text style={styles.addButtonText}>Add New Goal</Text>

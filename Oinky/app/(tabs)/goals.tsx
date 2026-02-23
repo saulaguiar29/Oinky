@@ -50,7 +50,7 @@ export default function GoalsScreen() {
         {/* Header */}
         <View style={styles.headerRow}>
           <Text style={styles.title}>My Goals</Text>
-          <Link href="./goal/create" asChild>
+          <Link href="/goal/create" asChild>
             <TouchableOpacity style={styles.addBtn}>
               <Ionicons name="add" size={22} color={Colors.white} />
             </TouchableOpacity>
@@ -60,7 +60,7 @@ export default function GoalsScreen() {
         {/* Active Goals */}
         <Text style={styles.sectionLabel}>Active ({active.length})</Text>
         {active.map((goal) => (
-          <Link key={goal._id} href={`./goal/${goal._id}`} asChild>
+          <Link key={goal._id} href={`/goal/${goal._id}`} asChild>
             <TouchableOpacity style={styles.card}>
               <View style={styles.cardTop}>
                 <Text style={styles.cardTitle}>{goal.title}</Text>
