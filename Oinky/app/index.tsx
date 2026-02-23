@@ -1,15 +1,7 @@
-import { Text, View } from "react-native";
+import { Redirect } from "expo-router";
 
+// Later (Week 6) this will check Firebase auth state
+// and redirect to (tabs) if already logged in
 export default function Index() {
-  return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Text>Edit app/index.tsx to edit this screen.</Text>
-    </View>
-  );
+  return <Redirect href="./(auth)/login" />;
 }
