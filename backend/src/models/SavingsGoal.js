@@ -16,7 +16,7 @@ const SavingsGoalSchema = new mongoose.Schema({
   deadline: { type: Date },
   savingPlan: {
     type: String,
-    enum: ["daily", "weekly", "monthly"],
+    enum: ["daily", "biweekly", "monthly"],
     default: "monthly",
   },
   status: {
