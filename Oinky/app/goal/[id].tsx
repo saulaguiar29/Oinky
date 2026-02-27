@@ -10,6 +10,10 @@ import {
   Alert,
   Linking,
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import { useState } from "react";
 import { useLocalSearchParams, router } from "expo-router";
@@ -78,6 +82,16 @@ function ActionModal({
   const [note, setNote] = useState("");
   const isDeposit = type === "deposit";
 
+  const handleConfirm = () => {
+    if (!amount || parseFloat(amount) <= 0) {
+      Alert.alert("Invalid amount", "Please enter a valid amount.");
+      return;
+    }
+    onConfirm(amount, note);
+    setAmount("");
+    setNote("");
+  };
+
   return (
     <Modal
       visible={visible}
@@ -85,65 +99,82 @@ function ActionModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={modal.overlay}>
-        <View style={modal.sheet}>
-          {/* Handle */}
-          <View style={modal.handle} />
-
-          <Text style={modal.title}>
-            {isDeposit ? "💰 Add Money" : "💸 Withdraw"}
-          </Text>
-          <Text style={modal.subtitle}>
-            {isDeposit
-              ? "How much are you saving?"
-              : "How much do you need back?"}
-          </Text>
-
-          {/* Amount */}
-          <View style={modal.amountRow}>
-            <Text style={modal.dollarSign}>$</Text>
-            <TextInput
-              style={modal.amountInput}
-              placeholder="0.00"
-              placeholderTextColor={Colors.textSecondary}
-              keyboardType="decimal-pad"
-              value={amount}
-              onChangeText={setAmount}
-              autoFocus
-            />
-          </View>
-
-          {/* Note */}
-          <TextInput
-            style={modal.noteInput}
-            placeholder="Add a note (optional)"
-            placeholderTextColor={Colors.textSecondary}
-            value={note}
-            onChangeText={setNote}
-          />
-
-          <TouchableOpacity
-            style={[modal.confirmBtn, !isDeposit && modal.withdrawBtn]}
-            onPress={() => {
-              if (!amount || parseFloat(amount) <= 0) {
-                Alert.alert("Invalid amount", "Please enter a valid amount.");
-                return;
-              }
-              onConfirm(amount, note);
-              setAmount("");
-              setNote("");
-            }}
+      {/*
+        FIX: Tapping the dim overlay dismisses keyboard and closes modal.
+        KeyboardAvoidingView pushes the sheet up when the numpad appears,
+        keeping the confirm/cancel buttons visible at all times.
+      */}
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={modal.overlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={0}
           >
-            <Text style={modal.confirmText}>
-              {isDeposit ? "Add to Goal" : "Withdraw"}
-            </Text>
-          </TouchableOpacity>
+            <TouchableWithoutFeedback>
+              <View style={modal.sheet}>
+                {/* Handle */}
+                <View style={modal.handle} />
 
-          <TouchableOpacity style={modal.cancelBtn} onPress={onClose}>
-            <Text style={modal.cancelText}>Cancel</Text>
-          </TouchableOpacity>
+                <Text style={modal.title}>
+                  {isDeposit ? "💰 Add Money" : "💸 Withdraw"}
+                </Text>
+                <Text style={modal.subtitle}>
+                  {isDeposit
+                    ? "How much are you saving?"
+                    : "How much do you need back?"}
+                </Text>
+
+                {/* Amount row with inline keyboard dismiss */}
+                <View style={modal.amountRow}>
+                  <Text style={modal.dollarSign}>$</Text>
+                  <TextInput
+                    style={modal.amountInput}
+                    placeholder="0.00"
+                    placeholderTextColor={Colors.textSecondary}
+                    keyboardType="decimal-pad"
+                    value={amount}
+                    onChangeText={setAmount}
+                    autoFocus
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                  />
+                  {/* ✅ "Done" pill dismisses the numpad without losing input */}
+                  <TouchableOpacity
+                    style={modal.keyboardDoneBtn}
+                    onPress={Keyboard.dismiss}
+                  >
+                    <Text style={modal.keyboardDoneText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Note */}
+                <TextInput
+                  style={modal.noteInput}
+                  placeholder="Add a note (optional)"
+                  placeholderTextColor={Colors.textSecondary}
+                  value={note}
+                  onChangeText={setNote}
+                  returnKeyType="done"
+                  onSubmitEditing={Keyboard.dismiss}
+                />
+
+                <TouchableOpacity
+                  style={[modal.confirmBtn, !isDeposit && modal.withdrawBtn]}
+                  onPress={handleConfirm}
+                >
+                  <Text style={modal.confirmText}>
+                    {isDeposit ? "Add to Goal" : "Withdraw"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={modal.cancelBtn} onPress={onClose}>
+                  <Text style={modal.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
@@ -709,7 +740,11 @@ const modal = StyleSheet.create({
     marginBottom: 4,
   },
   subtitle: { fontSize: 14, color: Colors.textSecondary, marginBottom: 24 },
-  amountRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
   dollarSign: {
     fontSize: 32,
     fontWeight: "800",
@@ -724,6 +759,19 @@ const modal = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: Colors.primary,
     paddingBottom: 8,
+  },
+  // "Done" pill next to the amount input — dismisses numpad without losing focus
+  keyboardDoneBtn: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginLeft: 10,
+  },
+  keyboardDoneText: {
+    color: Colors.primary,
+    fontWeight: "700",
+    fontSize: 14,
   },
   noteInput: {
     backgroundColor: Colors.background,

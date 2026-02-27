@@ -11,11 +11,13 @@ import {
   Image,
   Linking,
   Alert,
+  Modal,
 } from "react-native";
 import { useState } from "react";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Colors } from "../../../constants";
 
 const CATEGORIES = [
@@ -34,6 +36,24 @@ const PLANS = [
   { key: "biweekly", label: "Bi-Weekly", icon: "📅" },
   { key: "monthly", label: "Monthly", icon: "🗓️" },
 ];
+
+// Ensures a URL has a scheme so Linking.openURL works correctly
+function normalizeUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `https://${url}`;
+}
+
+// Format a Date object as YYYY-MM-DD for display
+function formatDate(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+// Parse a YYYY-MM-DD string into a Date (avoids timezone shifting)
+function parseDate(str: string): Date {
+  const [y, m, d] = str.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
 
 // Mock pre-loaded data — Week 7 will load from goalsAPI.getOne(token, id)
 const MOCK_GOAL = {
@@ -55,7 +75,11 @@ export default function EditGoalScreen() {
   const [title, setTitle] = useState(MOCK_GOAL.title);
   const [targetAmount, setTargetAmount] = useState(MOCK_GOAL.targetAmount);
   const [category, setCategory] = useState(MOCK_GOAL.category);
-  const [deadline, setDeadline] = useState(MOCK_GOAL.deadline);
+  // Parse existing deadline string into a Date so the picker can use it
+  const [deadline, setDeadline] = useState<Date | null>(
+    MOCK_GOAL.deadline ? parseDate(MOCK_GOAL.deadline) : null,
+  );
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState(MOCK_GOAL.notes);
   const [productUrl, setProductUrl] = useState(MOCK_GOAL.productUrl);
   const [savingPlan, setSavingPlan] = useState(MOCK_GOAL.savingPlan);
@@ -79,12 +103,34 @@ export default function EditGoalScreen() {
     if (!result.canceled) setImage(result.assets[0].uri);
   };
 
+  // Normalize URL before opening so bare domains work
+  const handlePreviewLink = () => {
+    const normalized = normalizeUrl(productUrl.trim());
+    if (!normalized) return;
+    Linking.openURL(normalized).catch(() =>
+      Alert.alert("Couldn't open link", "Make sure the URL is valid."),
+    );
+  };
+
+  // Try PayPal app first, fall back to browser if not installed
+  const handleConnectPayPal = async () => {
+    try {
+      await Linking.openURL("paypal://");
+    } catch {
+      Linking.openURL("https://www.paypal.com");
+    }
+  };
+
   const handleSave = () => {
     if (!title || !targetAmount) {
       Alert.alert("Missing info", "Goal name and target amount are required.");
       return;
     }
-    // TODO Week 7: call goalsAPI.update(token, id, { title, targetAmount, category, deadline, notes, productUrl, savingPlan })
+    // TODO Week 7: call goalsAPI.update(token, id, {
+    //   title, targetAmount: parseFloat(targetAmount),
+    //   category, deadline: deadline?.toISOString(),
+    //   notes, productUrl: normalizeUrl(productUrl), savingPlan
+    // })
     Alert.alert("Goal updated! ✅", `"${title}" has been saved.`, [
       { text: "OK", onPress: () => router.back() },
     ]);
@@ -92,6 +138,9 @@ export default function EditGoalScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      {/* Suppress the Stack header so our custom back button is the only one */}
+      <Stack.Screen options={{ headerShown: false }} />
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -216,24 +265,89 @@ export default function EditGoalScreen() {
               </View>
             </View>
 
-            {/* Due Date */}
+            {/* Due Date — branded modal picker (matches create screen) */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Due Date</Text>
-              <View style={styles.inputIcon}>
+              <TouchableOpacity
+                style={styles.dateBtn}
+                onPress={() => setShowDatePicker(true)}
+              >
                 <Ionicons
                   name="calendar-outline"
                   size={18}
-                  color={Colors.textSecondary}
-                  style={styles.inputIconLeft}
+                  color={deadline ? Colors.primary : Colors.textSecondary}
                 />
-                <TextInput
-                  style={[styles.input, styles.inputWithIcon]}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={Colors.textSecondary}
-                  value={deadline}
-                  onChangeText={setDeadline}
-                />
-              </View>
+                <Text
+                  style={[
+                    styles.dateBtnText,
+                    deadline && styles.dateBtnTextFilled,
+                  ]}
+                >
+                  {deadline ? formatDate(deadline) : "Select a date"}
+                </Text>
+                {deadline && (
+                  <TouchableOpacity
+                    onPress={() => setDeadline(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={Colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+
+              <Modal
+                visible={showDatePicker}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowDatePicker(false)}
+              >
+                <View style={styles.dateModalOverlay}>
+                  <View style={styles.dateModalSheet}>
+                    <View style={styles.dateModalHeader}>
+                      <Text style={styles.dateModalTitle}>📅 Pick a Date</Text>
+                      <TouchableOpacity
+                        style={styles.dateModalDoneBtn}
+                        onPress={() => setShowDatePicker(false)}
+                      >
+                        <Text style={styles.dateModalDoneText}>Done</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.datePickerCard}>
+                      <DateTimePicker
+                        value={deadline ?? new Date()}
+                        mode="date"
+                        display="spinner"
+                        minimumDate={new Date()}
+                        textColor={Colors.textPrimary}
+                        onChange={(event, selectedDate) => {
+                          if (event.type !== "dismissed" && selectedDate) {
+                            setDeadline(selectedDate);
+                          }
+                        }}
+                        style={{ width: "100%" }}
+                      />
+                    </View>
+
+                    {deadline && (
+                      <View style={styles.dateSelectedRow}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={16}
+                          color={Colors.success}
+                        />
+                        <Text style={styles.dateSelectedText}>
+                          Goal due by {formatDate(deadline)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </Modal>
             </View>
 
             {/* Saving Plan */}
@@ -277,10 +391,11 @@ export default function EditGoalScreen() {
                 />
                 <TextInput
                   style={[styles.input, styles.inputWithIcon]}
-                  placeholder="https://amazon.com/..."
+                  placeholder="amazon.com/... or https://..."
                   placeholderTextColor={Colors.textSecondary}
                   keyboardType="url"
                   autoCapitalize="none"
+                  autoCorrect={false}
                   value={productUrl}
                   onChangeText={setProductUrl}
                 />
@@ -288,7 +403,7 @@ export default function EditGoalScreen() {
               {productUrl.length > 0 && (
                 <TouchableOpacity
                   style={styles.previewLink}
-                  onPress={() => Linking.openURL(productUrl)}
+                  onPress={handlePreviewLink}
                 >
                   <Ionicons
                     name="open-outline"
@@ -298,6 +413,22 @@ export default function EditGoalScreen() {
                   <Text style={styles.previewLinkText}>Preview link</Text>
                 </TouchableOpacity>
               )}
+            </View>
+
+            {/* PayPal */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>
+                PayPal <Text style={styles.optional}>(optional)</Text>
+              </Text>
+              <Text style={styles.fieldHint}>
+                Opens the PayPal app if installed, otherwise opens in browser.
+              </Text>
+              <TouchableOpacity
+                style={styles.paypalBtn}
+                onPress={handleConnectPayPal}
+              >
+                <Text style={styles.paypalBtnText}>💳 Connect PayPal</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Notes */}
@@ -427,6 +558,12 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textTransform: "none",
   },
+  fieldHint: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 8,
+    marginTop: -4,
+  },
 
   input: {
     backgroundColor: Colors.white,
@@ -440,6 +577,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textArea: { height: 90, textAlignVertical: "top", paddingTop: 14 },
+
   amountRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   currencyTag: {
     backgroundColor: Colors.primary,
@@ -452,6 +590,7 @@ const styles = StyleSheet.create({
   currencyText: { color: Colors.white, fontSize: 20, fontWeight: "800" },
   amountInput: { fontSize: 22, fontWeight: "700" },
 
+  // Category
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   categoryBtn: {
     width: "22%",
@@ -476,10 +615,81 @@ const styles = StyleSheet.create({
   },
   categoryLabelActive: { color: Colors.primary },
 
+  // Date picker trigger button
+  dateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  dateBtnText: { flex: 1, fontSize: 15, color: Colors.textSecondary },
+  dateBtnTextFilled: { color: Colors.textPrimary, fontWeight: "600" },
+
+  // Date picker modal
+  dateModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  dateModalSheet: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: 48,
+    overflow: "hidden",
+  },
+  dateModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  dateModalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: Colors.white,
+  },
+  dateModalDoneBtn: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  dateModalDoneText: { color: Colors.white, fontWeight: "700", fontSize: 15 },
+  datePickerCard: {
+    backgroundColor: Colors.white,
+    marginHorizontal: 20,
+    marginTop: 16,
+    borderRadius: 16,
+    overflow: "hidden",
+    alignItems: "center",
+  },
+  dateSelectedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 12,
+  },
+  dateSelectedText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.success,
+  },
+
+  // Input with icon
   inputIcon: { flexDirection: "row", alignItems: "center" },
   inputIconLeft: { position: "absolute", left: 14, zIndex: 1 },
   inputWithIcon: { paddingLeft: 42 },
 
+  // Saving Plan
   planRow: { flexDirection: "row", gap: 10 },
   planBtn: {
     flex: 1,
@@ -499,6 +709,7 @@ const styles = StyleSheet.create({
   planLabel: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
   planLabelActive: { color: Colors.white },
 
+  // Product link preview
   previewLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -507,6 +718,16 @@ const styles = StyleSheet.create({
   },
   previewLinkText: { fontSize: 13, color: Colors.primary, fontWeight: "600" },
 
+  // PayPal
+  paypalBtn: {
+    backgroundColor: "#003087",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  paypalBtnText: { color: Colors.white, fontSize: 15, fontWeight: "700" },
+
+  // Submit / cancel
   submitBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 16,
