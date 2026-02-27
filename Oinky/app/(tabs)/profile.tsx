@@ -4,13 +4,34 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { Colors } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
 
 export default function ProfileScreen() {
-  // TODO Week 6: pull real user from Firebase/MongoDB
-  const user = { name: "Saul Aguiar", email: "saul@example.com" };
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log Out",
+        style: "destructive",
+        onPress: async () => {
+          await logout();
+          router.replace("/(auth)/login");
+        },
+      },
+    ]);
+  };
+
+  // Use Firebase display name / email, fallback to placeholders
+  const displayName = user?.displayName || "Oinky User";
+  const email = user?.email || "";
+  const initials = displayName.charAt(0).toUpperCase();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -19,10 +40,10 @@ export default function ProfileScreen() {
 
         {/* Avatar */}
         <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
+          <Text style={styles.avatarText}>{initials}</Text>
         </View>
-        <Text style={styles.name}>{user.name}</Text>
-        <Text style={styles.email}>{user.email}</Text>
+        <Text style={styles.name}>{displayName}</Text>
+        <Text style={styles.email}>{email}</Text>
 
         {/* Menu Items */}
         <View style={styles.menu}>
@@ -49,7 +70,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Logout */}
-        <TouchableOpacity style={styles.logoutBtn}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={Colors.secondary} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
