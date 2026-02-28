@@ -12,7 +12,7 @@ const SavingsGoalSchema = new mongoose.Schema({
   currentAmount: { type: Number, default: 0 },
   // currentAmount = SUM(deposits) - SUM(withdrawals), updated on every transaction
   imageUrl: { type: String, default: null },
-  productUrl: { type: String, default: null }, // link to the actual product (Taylor's feedback)
+  productUrl: { type: String, default: null },
   deadline: { type: Date },
   savingPlan: {
     type: String,
