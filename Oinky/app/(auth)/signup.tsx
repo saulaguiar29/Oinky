@@ -46,6 +46,8 @@ export default function SignupScreen() {
       await signup(name.trim(), email.trim(), password);
       router.replace("/(tabs)/dashboard");
     } catch (error: any) {
+      console.log("Signup error code:", error.code); // ADD THIS LINE
+      console.log("Signup error message:", error.message); // ADD THIS LINE
       const msg = firebaseErrorMessage(error.code);
       Alert.alert("Sign Up Failed", msg);
     } finally {

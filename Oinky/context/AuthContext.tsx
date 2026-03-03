@@ -70,10 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const credential = await signInWithEmailAndPassword(auth, email, password);
     const idToken = await credential.user.getIdToken();
 
-    // Sync to MongoDB on login (creates user doc on first login)
-    await authAPI.sync(idToken);
+    try {
+      await authAPI.sync(idToken);
+    } catch (e) {
+      console.warn("Backend sync failed (non-fatal):", e);
+    }
   };
-
   // ── Signup ─────────────────────────────────────────────────────────────────
   const signup = async (name: string, email: string, password: string) => {
     const credential = await createUserWithEmailAndPassword(
@@ -81,14 +83,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
     );
-
-    // Set the display name in Firebase right away
     await updateProfile(credential.user, { displayName: name });
-
     const idToken = await credential.user.getIdToken();
 
-    // Sync to MongoDB — creates the User document with name + email
-    await authAPI.sync(idToken);
+    // Wrap sync so a backend failure doesn't kill the whole signup flow
+    try {
+      await authAPI.sync(idToken);
+    } catch (e) {
+      console.warn("Backend sync failed (non-fatal):", e);
+    }
   };
 
   // ── Logout ─────────────────────────────────────────────────────────────────
