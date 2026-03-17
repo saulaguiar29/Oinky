@@ -4,49 +4,75 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from "react-native";
-import { Link } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Link, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useState } from "react";
 import { Colors } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
+import { goalsAPI } from "../../services/api";
 
-const MOCK_GOALS = [
-  {
-    _id: "1",
-    title: "PS5",
-    targetAmount: 500,
-    currentAmount: 175,
-    status: "active",
-    savingPlan: "monthly",
-    deadline: "2025-06-01",
-  },
-  {
-    _id: "2",
-    title: "Japan Trip",
-    targetAmount: 2000,
-    currentAmount: 640,
-    status: "active",
-    savingPlan: "weekly",
-    deadline: "2025-12-01",
-  },
-  {
-    _id: "3",
-    title: "AirPods Pro",
-    targetAmount: 250,
-    currentAmount: 250,
-    status: "completed",
-    savingPlan: "monthly",
-    deadline: "2025-02-01",
-  },
-];
+type Goal = {
+  _id: string;
+  title: string;
+  targetAmount: number;
+  currentAmount: number;
+  status: string;
+  savingPlan: string;
+  deadline?: string;
+};
 
 export default function GoalsScreen() {
-  const active = MOCK_GOALS.filter((g) => g.status === "active");
-  const completed = MOCK_GOALS.filter((g) => g.status === "completed");
+  const { token } = useAuth();
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadGoals = useCallback(
+    async (showRefresh = false) => {
+      if (!token) return;
+      if (showRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
+
+      try {
+        const data = await goalsAPI.getAll(token);
+        setGoals(data.goals);
+      } catch (err: any) {
+        Alert.alert("Error", err.message || "Could not load goals.");
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [token],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      loadGoals();
+    }, [loadGoals]),
+  );
+
+  const active = goals.filter((g) => g.status === "active");
+  const completed = goals.filter((g) => g.status === "completed");
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadGoals(true)}
+            tintColor={Colors.primary}
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.headerRow}>
           <Text style={styles.title}>My Goals</Text>
@@ -57,58 +83,79 @@ export default function GoalsScreen() {
           </Link>
         </View>
 
-        {/* Active Goals */}
-        <Text style={styles.sectionLabel}>Active ({active.length})</Text>
-        {active.map((goal) => (
-          <Link key={goal._id} href={`/goal/${goal._id}`} asChild>
-            <TouchableOpacity style={styles.card}>
-              <View style={styles.cardTop}>
-                <Text style={styles.cardTitle}>{goal.title}</Text>
-                <Text style={styles.cardPlan}>{goal.savingPlan}</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width: `${Math.min((goal.currentAmount / goal.targetAmount) * 100, 100)}%`,
-                    },
-                  ]}
-                />
-              </View>
-              <View style={styles.cardBottom}>
-                <Text style={styles.cardSaved}>
-                  ${goal.currentAmount} / ${goal.targetAmount}
-                </Text>
-                <Text style={styles.cardPct}>
-                  {Math.round((goal.currentAmount / goal.targetAmount) * 100)}%
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </Link>
-        ))}
-
-        {/* Completed Goals */}
-        {completed.length > 0 && (
+        {isLoading ? (
+          <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+        ) : (
           <>
-            <Text style={[styles.sectionLabel, { marginTop: 24 }]}>
-              Completed ({completed.length})
-            </Text>
-            {completed.map((goal) => (
-              <View key={goal._id} style={[styles.card, styles.completedCard]}>
-                <View style={styles.cardTop}>
-                  <Text style={styles.cardTitle}>{goal.title}</Text>
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={20}
-                    color={Colors.success}
-                  />
-                </View>
-                <Text style={styles.completedSub}>
-                  ${goal.targetAmount} saved ✓
+            {/* Active Goals */}
+            <Text style={styles.sectionLabel}>Active ({active.length})</Text>
+            {active.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>
+                  No active goals. Create one! 🐷
                 </Text>
               </View>
-            ))}
+            ) : (
+              active.map((goal) => (
+                <Link key={goal._id} href={`/goal/${goal._id}`} asChild>
+                  <TouchableOpacity style={styles.card}>
+                    <View style={styles.cardTop}>
+                      <Text style={styles.cardTitle}>{goal.title}</Text>
+                      <Text style={styles.cardPlan}>{goal.savingPlan}</Text>
+                    </View>
+                    <View style={styles.progressTrack}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${Math.min((goal.currentAmount / goal.targetAmount) * 100, 100)}%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <View style={styles.cardBottom}>
+                      <Text style={styles.cardSaved}>
+                        ${goal.currentAmount} / ${goal.targetAmount}
+                      </Text>
+                      <Text style={styles.cardPct}>
+                        {Math.round(
+                          (goal.currentAmount / goal.targetAmount) * 100,
+                        )}
+                        %
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </Link>
+              ))
+            )}
+
+            {/* Completed Goals */}
+            {completed.length > 0 && (
+              <>
+                <Text style={[styles.sectionLabel, { marginTop: 24 }]}>
+                  Completed ({completed.length})
+                </Text>
+                {completed.map((goal) => (
+                  <Link key={goal._id} href={`/goal/${goal._id}`} asChild>
+                    <TouchableOpacity
+                      style={[styles.card, styles.completedCard]}
+                    >
+                      <View style={styles.cardTop}>
+                        <Text style={styles.cardTitle}>{goal.title}</Text>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color={Colors.success}
+                        />
+                      </View>
+                      <Text style={styles.completedSub}>
+                        ${goal.targetAmount} saved ✓
+                      </Text>
+                    </TouchableOpacity>
+                  </Link>
+                ))}
+              </>
+            )}
           </>
         )}
 
@@ -189,4 +236,6 @@ const styles = StyleSheet.create({
   cardSaved: { fontSize: 13, fontWeight: "600", color: Colors.textPrimary },
   cardPct: { fontSize: 13, color: Colors.textSecondary },
   completedSub: { fontSize: 14, color: Colors.success, fontWeight: "600" },
+  emptyState: { paddingVertical: 24, alignItems: "center" },
+  emptyText: { fontSize: 14, color: Colors.textSecondary },
 });

@@ -4,82 +4,102 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from "react-native";
-import { useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useState, useEffect } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
+import { goalsAPI, transactionsAPI } from "../../services/api";
 
-// Mock goals — Week 7/8 will load from goalsAPI.getAll(token)
-const MOCK_GOALS = [
-  {
-    _id: "1",
-    title: "PS5",
-    emoji: "🎮",
-    currentAmount: 175,
-    targetAmount: 500,
-  },
-  {
-    _id: "2",
-    title: "Japan Trip",
-    emoji: "✈️",
-    currentAmount: 320,
-    targetAmount: 2000,
-  },
-  {
-    _id: "3",
-    title: "New MacBook",
-    emoji: "💻",
-    currentAmount: 50,
-    targetAmount: 1299,
-  },
-  {
-    _id: "4",
-    title: "Nike Dunks",
-    emoji: "👟",
-    currentAmount: 80,
-    targetAmount: 120,
-  },
-];
+type Goal = {
+  _id: string;
+  title: string;
+  currentAmount: number;
+  targetAmount: number;
+};
+
+const GOAL_EMOJIS: Record<string, string> = {
+  Tech: "💻",
+  Travel: "✈️",
+  Fashion: "👟",
+  Gaming: "🎮",
+  Home: "🏠",
+  Health: "💪",
+  Food: "🍕",
+  Other: "🎯",
+};
 
 export default function TransferScreen() {
   const { from } = useLocalSearchParams<{ from: string }>();
+  const { token } = useAuth();
 
-  const fromGoal = MOCK_GOALS.find((g) => g._id === from) ?? MOCK_GOALS[0];
-  const toGoals = MOCK_GOALS.filter((g) => g._id !== fromGoal._id);
-
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedTo, setSelectedTo] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
 
+  useEffect(() => {
+    const load = async () => {
+      if (!token) return;
+      try {
+        const data = await goalsAPI.getAll(token, "active");
+        setGoals(data.goals);
+      } catch (err: any) {
+        Alert.alert("Error", err.message || "Could not load goals.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    load();
+  }, [token]);
+
+  const fromGoal = goals.find((g) => g._id === from) ?? goals[0];
+  const toGoals = goals.filter((g) => g._id !== fromGoal?._id);
   const toGoal = toGoals.find((g) => g._id === selectedTo);
-  const maxTransfer = fromGoal.currentAmount;
+
+  const maxTransfer = fromGoal?.currentAmount ?? 0;
   const parsedAmount = parseFloat(amount) || 0;
   const isValid = selectedTo && parsedAmount > 0 && parsedAmount <= maxTransfer;
 
   const handleTransfer = () => {
-    if (!isValid) return;
+    if (!isValid || !fromGoal || !toGoal) return;
     Alert.alert(
       "Confirm Transfer",
-      `Move $${parsedAmount.toFixed(2)} from "${fromGoal.title}" to "${toGoal?.title}"?`,
+      `Move $${parsedAmount.toFixed(2)} from "${fromGoal.title}" to "${toGoal.title}"?`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Transfer",
-          onPress: () => {
-            // TODO Week 7: call transactionsAPI.transfer(token, { fromGoalId: fromGoal._id, toGoalId: selectedTo, amount: parsedAmount })
-            Alert.alert(
-              "Transferred! 🔄",
-              `$${parsedAmount.toFixed(2)} moved to "${toGoal?.title}".`,
-              [
-                {
-                  text: "Done",
-                  onPress: () => router.replace("/(tabs)/goals"),
-                },
-              ],
-            );
+          onPress: async () => {
+            if (!token) return;
+            setIsSubmitting(true);
+            try {
+              await transactionsAPI.transfer(token, {
+                fromGoalId: fromGoal._id,
+                toGoalId: selectedTo,
+                amount: parsedAmount,
+              });
+              Alert.alert(
+                "Transferred! 🔄",
+                `$${parsedAmount.toFixed(2)} moved to "${toGoal.title}".`,
+                [
+                  {
+                    text: "Done",
+                    onPress: () => router.replace("/(tabs)/goals"),
+                  },
+                ],
+              );
+            } catch (err: any) {
+              Alert.alert("Error", err.message || "Transfer failed.");
+            } finally {
+              setIsSubmitting(false);
+            }
           },
         },
       ],
@@ -87,6 +107,43 @@ export default function TransferScreen() {
   };
 
   const setMax = () => setAmount(maxTransfer.toString());
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ActivityIndicator
+          color={Colors.primary}
+          style={{ flex: 1, marginTop: 80 }}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  if (!fromGoal) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backBtn}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={22}
+              color={Colors.textPrimary}
+            />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Transfer Savings</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View
+          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text style={{ color: Colors.textSecondary }}>No goals found.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -108,11 +165,11 @@ export default function TransferScreen() {
           </Text>
         </View>
 
-        {/* From Goal (fixed) */}
+        {/* From Goal */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Transferring From</Text>
           <View style={styles.fromCard}>
-            <Text style={styles.fromEmoji}>{fromGoal.emoji}</Text>
+            <Text style={styles.fromEmoji}>🎯</Text>
             <View style={styles.fromInfo}>
               <Text style={styles.fromTitle}>{fromGoal.title}</Text>
               <Text style={styles.fromBalance}>
@@ -178,68 +235,75 @@ export default function TransferScreen() {
           <View style={styles.arrowLine} />
         </View>
 
-        {/* To Goal (selectable) */}
+        {/* To Goal */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Transfer To</Text>
-          <View style={styles.goalList}>
-            {toGoals.map((goal) => {
-              const pct = Math.round(
-                (goal.currentAmount / goal.targetAmount) * 100,
-              );
-              const isSelected = selectedTo === goal._id;
-              return (
-                <TouchableOpacity
-                  key={goal._id}
-                  style={[
-                    styles.goalOption,
-                    isSelected && styles.goalOptionSelected,
-                  ]}
-                  onPress={() => setSelectedTo(goal._id)}
-                >
-                  <View style={styles.goalOptionLeft}>
-                    <Text style={styles.goalOptionEmoji}>{goal.emoji}</Text>
-                    <View style={styles.goalOptionInfo}>
-                      <Text
-                        style={[
-                          styles.goalOptionTitle,
-                          isSelected && styles.goalOptionTitleSelected,
-                        ]}
-                      >
-                        {goal.title}
-                      </Text>
-                      {/* Mini progress */}
-                      <View style={styles.miniProgressTrack}>
-                        <View
-                          style={[
-                            styles.miniProgressFill,
-                            {
-                              width: `${pct}%`,
-                              backgroundColor: isSelected
-                                ? Colors.white
-                                : Colors.primary,
-                            },
-                          ]}
-                        />
-                      </View>
-                      <Text
-                        style={[
-                          styles.goalOptionSub,
-                          isSelected && styles.goalOptionSubSelected,
-                        ]}
-                      >
-                        ${goal.currentAmount} / ${goal.targetAmount} · {pct}%
-                      </Text>
-                    </View>
-                  </View>
-                  <View
-                    style={[styles.radio, isSelected && styles.radioSelected]}
+          {toGoals.length === 0 ? (
+            <View style={{ padding: 20, alignItems: "center" }}>
+              <Text style={{ color: Colors.textSecondary, fontSize: 14 }}>
+                No other active goals to transfer to.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.goalList}>
+              {toGoals.map((goal) => {
+                const pct = Math.round(
+                  (goal.currentAmount / goal.targetAmount) * 100,
+                );
+                const isSelected = selectedTo === goal._id;
+                return (
+                  <TouchableOpacity
+                    key={goal._id}
+                    style={[
+                      styles.goalOption,
+                      isSelected && styles.goalOptionSelected,
+                    ]}
+                    onPress={() => setSelectedTo(goal._id)}
                   >
-                    {isSelected && <View style={styles.radioDot} />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                    <View style={styles.goalOptionLeft}>
+                      <Text style={styles.goalOptionEmoji}>🎯</Text>
+                      <View style={styles.goalOptionInfo}>
+                        <Text
+                          style={[
+                            styles.goalOptionTitle,
+                            isSelected && styles.goalOptionTitleSelected,
+                          ]}
+                        >
+                          {goal.title}
+                        </Text>
+                        <View style={styles.miniProgressTrack}>
+                          <View
+                            style={[
+                              styles.miniProgressFill,
+                              {
+                                width: `${pct}%`,
+                                backgroundColor: isSelected
+                                  ? Colors.white
+                                  : Colors.primary,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text
+                          style={[
+                            styles.goalOptionSub,
+                            isSelected && styles.goalOptionSubSelected,
+                          ]}
+                        >
+                          ${goal.currentAmount} / ${goal.targetAmount} · {pct}%
+                        </Text>
+                      </View>
+                    </View>
+                    <View
+                      style={[styles.radio, isSelected && styles.radioSelected]}
+                    >
+                      {isSelected && <View style={styles.radioDot} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
         </View>
 
         {/* Preview */}
@@ -248,15 +312,11 @@ export default function TransferScreen() {
             <Text style={styles.previewTitle}>Transfer Summary</Text>
             <View style={styles.previewRow}>
               <Text style={styles.previewLabel}>From</Text>
-              <Text style={styles.previewValue}>
-                {fromGoal.emoji} {fromGoal.title}
-              </Text>
+              <Text style={styles.previewValue}>{fromGoal.title}</Text>
             </View>
             <View style={styles.previewRow}>
               <Text style={styles.previewLabel}>To</Text>
-              <Text style={styles.previewValue}>
-                {toGoal.emoji} {toGoal.title}
-              </Text>
+              <Text style={styles.previewValue}>{toGoal.title}</Text>
             </View>
             <View style={[styles.previewRow, styles.previewRowLast]}>
               <Text style={styles.previewLabel}>Amount</Text>
@@ -270,12 +330,25 @@ export default function TransferScreen() {
         {/* CTA */}
         <View style={styles.footer}>
           <TouchableOpacity
-            style={[styles.transferBtn, !isValid && styles.transferBtnDisabled]}
+            style={[
+              styles.transferBtn,
+              (!isValid || isSubmitting) && styles.transferBtnDisabled,
+            ]}
             onPress={handleTransfer}
-            disabled={!isValid}
+            disabled={!isValid || isSubmitting}
           >
-            <Ionicons name="swap-horizontal" size={20} color={Colors.white} />
-            <Text style={styles.transferBtnText}>Transfer Now</Text>
+            {isSubmitting ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <>
+                <Ionicons
+                  name="swap-horizontal"
+                  size={20}
+                  color={Colors.white}
+                />
+                <Text style={styles.transferBtnText}>Transfer Now</Text>
+              </>
+            )}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.cancelBtn}
@@ -314,7 +387,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   headerTitle: { fontSize: 18, fontWeight: "800", color: Colors.textPrimary },
-
   explainer: {
     marginHorizontal: 20,
     marginBottom: 8,
@@ -328,7 +400,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 19,
   },
-
   section: { paddingHorizontal: 20, marginTop: 20 },
   sectionLabel: {
     fontSize: 13,
@@ -338,8 +409,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 10,
   },
-
-  // From card
   fromCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
@@ -361,8 +430,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   fromBadgeText: { color: Colors.white, fontSize: 11, fontWeight: "700" },
-
-  // Amount
   amountCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
@@ -392,7 +459,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   maxText: { color: Colors.primary, fontSize: 12, fontWeight: "800" },
-
   errorRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -407,8 +473,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   remainText: { fontSize: 13, color: Colors.success, fontWeight: "600" },
-
-  // Arrow divider
   arrowRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -425,8 +489,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginHorizontal: 12,
   },
-
-  // Goal list
   goalList: { gap: 10 },
   goalOption: {
     backgroundColor: Colors.white,
@@ -487,8 +549,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: Colors.white,
   },
-
-  // Preview
   previewCard: {
     marginHorizontal: 20,
     marginTop: 20,
@@ -521,8 +581,6 @@ const styles = StyleSheet.create({
   },
   previewValue: { fontSize: 14, color: Colors.textPrimary, fontWeight: "700" },
   previewAmount: { fontSize: 16, color: Colors.primary, fontWeight: "800" },
-
-  // Footer
   footer: { paddingHorizontal: 20, marginTop: 24 },
   transferBtn: {
     backgroundColor: Colors.primary,

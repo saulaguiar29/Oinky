@@ -7,12 +7,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Image,
   Linking,
   Alert,
   Modal,
+  ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useState } from "react";
 import { router } from "expo-router";
 import { Stack } from "expo-router";
@@ -20,6 +21,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Colors } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
+import { goalsAPI } from "../../services/api";
 
 const CATEGORIES = [
   { label: "Tech", icon: "💻" },
@@ -38,22 +41,21 @@ const PLANS = [
   { key: "monthly", label: "Monthly", icon: "🗓️" },
 ];
 
-// Ensures a URL has a scheme so Linking.openURL works correctly
 function normalizeUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   return `https://${url}`;
 }
 
-// Format a Date object as YYYY-MM-DD for display
 function formatDate(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
 export default function CreateGoalScreen() {
+  const { token } = useAuth();
   const [title, setTitle] = useState("");
   const [targetAmount, setTargetAmount] = useState("");
-  const [startingAmount, setStartingAmount] = useState(""); // NEW: starting / down payment
+  const [startingAmount, setStartingAmount] = useState("");
   const [category, setCategory] = useState("");
   const [deadline, setDeadline] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -61,6 +63,7 @@ export default function CreateGoalScreen() {
   const [productUrl, setProductUrl] = useState("");
   const [savingPlan, setSavingPlan] = useState("monthly");
   const [image, setImage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -80,7 +83,6 @@ export default function CreateGoalScreen() {
     if (!result.canceled) setImage(result.assets[0].uri);
   };
 
-  // FIX: Normalize URL before opening so bare domains work
   const handlePreviewLink = () => {
     const normalized = normalizeUrl(productUrl.trim());
     if (!normalized) return;
@@ -89,21 +91,15 @@ export default function CreateGoalScreen() {
     );
   };
 
-  // FIX: Deep link to PayPal app with web fallback.
-  // canOpenURL requires LSApplicationQueriesSchemes in app.json on iOS,
-  // so we try opening the app URL directly and fall back on error instead.
   const handleConnectPayPal = async () => {
-    const paypalAppUrl = "paypal://"; // opens PayPal app if installed
-    const paypalWebUrl = "https://www.paypal.com";
     try {
-      await Linking.openURL(paypalAppUrl);
+      await Linking.openURL("paypal://");
     } catch {
-      // App not installed — fall back to browser
-      Linking.openURL(paypalWebUrl);
+      Linking.openURL("https://www.paypal.com");
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!title || !targetAmount) {
       Alert.alert("Missing info", "Goal name and target amount are required.");
       return;
@@ -117,22 +113,35 @@ export default function CreateGoalScreen() {
       );
       return;
     }
-    // TODO Week 7: call goalsAPI.create(token, {
-    //   title, targetAmount: target, currentAmount: starting,
-    //   category, deadline: deadline?.toISOString(), notes, productUrl: normalizeUrl(productUrl), savingPlan
-    // })
-    Alert.alert("Goal created! 🐷", `"${title}" is ready to save towards.`, [
-      { text: "Let's go!", onPress: () => router.replace("/(tabs)/goals") },
-    ]);
+    if (!token) {
+      Alert.alert("Error", "Not authenticated.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await goalsAPI.create(token, {
+        title,
+        targetAmount: target,
+        currentAmount: starting,
+        category,
+        deadline: deadline?.toISOString(),
+        notes,
+        productUrl: productUrl ? normalizeUrl(productUrl) : undefined,
+        savingPlan,
+      });
+      Alert.alert("Goal created! 🐷", `"${title}" is ready to save towards.`, [
+        { text: "Let's go!", onPress: () => router.replace("/(tabs)/goals") },
+      ]);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not create goal.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/*
-        FIX: _layout.tsx sets headerShown: true for this screen, which puts a
-        native Stack back button at the very top-left that isn't wired to our
-        custom nav. This overrides it so only our custom header renders.
-      */}
       <Stack.Screen options={{ headerShown: false }} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -217,7 +226,7 @@ export default function CreateGoalScreen() {
               </View>
             </View>
 
-            {/* NEW: Starting / Down Payment Amount */}
+            {/* Starting Amount */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>
                 Starting Amount <Text style={styles.optional}>(optional)</Text>
@@ -239,7 +248,6 @@ export default function CreateGoalScreen() {
                   onChangeText={setStartingAmount}
                 />
               </View>
-              {/* Live progress preview */}
               {targetAmount && startingAmount ? (
                 <View style={styles.startingPreview}>
                   <View style={styles.startingBar}>
@@ -296,7 +304,7 @@ export default function CreateGoalScreen() {
               </View>
             </View>
 
-            {/* FIX: Due Date — modal date picker with branded styling */}
+            {/* Due Date */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Due Date</Text>
               <TouchableOpacity
@@ -329,8 +337,6 @@ export default function CreateGoalScreen() {
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
-
-              {/* Branded modal wrapping the native picker so it's clearly visible */}
               <Modal
                 visible={showDatePicker}
                 transparent
@@ -339,7 +345,6 @@ export default function CreateGoalScreen() {
               >
                 <View style={styles.dateModalOverlay}>
                   <View style={styles.dateModalSheet}>
-                    {/* Branded header */}
                     <View style={styles.dateModalHeader}>
                       <Text style={styles.dateModalTitle}>📅 Pick a Date</Text>
                       <TouchableOpacity
@@ -349,8 +354,6 @@ export default function CreateGoalScreen() {
                         <Text style={styles.dateModalDoneText}>Done</Text>
                       </TouchableOpacity>
                     </View>
-
-                    {/* Native picker — sits on white card so it's crisp */}
                     <View style={styles.datePickerCard}>
                       <DateTimePicker
                         value={deadline ?? new Date()}
@@ -366,8 +369,6 @@ export default function CreateGoalScreen() {
                         style={{ width: "100%" }}
                       />
                     </View>
-
-                    {/* Selected date confirmation */}
                     {deadline && (
                       <View style={styles.dateSelectedRow}>
                         <Ionicons
@@ -412,7 +413,7 @@ export default function CreateGoalScreen() {
               </View>
             </View>
 
-            {/* FIX: Product Link — normalize URL on preview */}
+            {/* Product Link */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>
                 Product Link <Text style={styles.optional}>(optional)</Text>
@@ -453,7 +454,7 @@ export default function CreateGoalScreen() {
               )}
             </View>
 
-            {/* FIX: PayPal — deep link to app with web fallback */}
+            {/* PayPal */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>
                 PayPal <Text style={styles.optional}>(optional)</Text>
@@ -486,8 +487,16 @@ export default function CreateGoalScreen() {
             </View>
 
             {/* Submit */}
-            <TouchableOpacity style={styles.submitBtn} onPress={handleCreate}>
-              <Text style={styles.submitText}>Create Goal 🐷</Text>
+            <TouchableOpacity
+              style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
+              onPress={handleCreate}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color={Colors.white} />
+              ) : (
+                <Text style={styles.submitText}>Create Goal 🐷</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -528,8 +537,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   headerTitle: { fontSize: 18, fontWeight: "800", color: Colors.textPrimary },
-
-  // Image Picker
   imagePicker: {
     marginHorizontal: 20,
     borderRadius: 20,
@@ -562,7 +569,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   imagePlaceholderSub: { fontSize: 12, color: Colors.border },
-
   form: { paddingHorizontal: 20 },
   fieldGroup: { marginBottom: 22 },
   label: {
@@ -584,7 +590,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: -4,
   },
-
   input: {
     backgroundColor: Colors.white,
     borderWidth: 1.5,
@@ -597,7 +602,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textArea: { height: 90, textAlignVertical: "top", paddingTop: 14 },
-
   amountRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   currencyTag: {
     backgroundColor: Colors.primary,
@@ -610,8 +614,6 @@ const styles = StyleSheet.create({
   currencyTagGreen: { backgroundColor: Colors.success },
   currencyText: { color: Colors.white, fontSize: 20, fontWeight: "800" },
   amountInput: { fontSize: 22, fontWeight: "700" },
-
-  // Starting amount preview bar
   startingPreview: { marginTop: 10 },
   startingBar: {
     height: 8,
@@ -630,8 +632,6 @@ const styles = StyleSheet.create({
     color: Colors.success,
     fontWeight: "600",
   },
-
-  // Category
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   categoryBtn: {
     width: "22%",
@@ -655,8 +655,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   categoryLabelActive: { color: Colors.primary },
-
-  // Date picker button (the trigger row)
   dateBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -670,8 +668,6 @@ const styles = StyleSheet.create({
   },
   dateBtnText: { flex: 1, fontSize: 15, color: Colors.textSecondary },
   dateBtnTextFilled: { color: Colors.textPrimary, fontWeight: "600" },
-
-  // Date picker modal
   dateModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -692,11 +688,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  dateModalTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: Colors.white,
-  },
+  dateModalTitle: { fontSize: 17, fontWeight: "800", color: Colors.white },
   dateModalDoneBtn: {
     backgroundColor: "rgba(255,255,255,0.2)",
     borderRadius: 10,
@@ -719,18 +711,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 12,
   },
-  dateSelectedText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.success,
-  },
-
-  // Input with icon
+  dateSelectedText: { fontSize: 14, fontWeight: "600", color: Colors.success },
   inputIcon: { flexDirection: "row", alignItems: "center" },
   inputIconLeft: { position: "absolute", left: 14, zIndex: 1 },
   inputWithIcon: { paddingLeft: 42 },
-
-  // Saving Plan
   planRow: { flexDirection: "row", gap: 10 },
   planBtn: {
     flex: 1,
@@ -749,8 +733,6 @@ const styles = StyleSheet.create({
   planIcon: { fontSize: 20 },
   planLabel: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
   planLabelActive: { color: Colors.white },
-
-  // Product link
   previewLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -758,8 +740,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   previewLinkText: { fontSize: 13, color: Colors.primary, fontWeight: "600" },
-
-  // PayPal
   paypalBtn: {
     backgroundColor: "#003087",
     borderRadius: 14,
@@ -767,8 +747,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   paypalBtnText: { color: Colors.white, fontSize: 15, fontWeight: "700" },
-
-  // Submit
   submitBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 16,

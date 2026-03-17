@@ -4,7 +4,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Modal,
   TextInput,
   Alert,
@@ -14,55 +13,37 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
-import { useState } from "react";
-import { useLocalSearchParams, router } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useState, useCallback } from "react";
+import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
+import { goalsAPI, transactionsAPI } from "../../services/api";
 
-// Mock — replaced with real API in Week 7/8
-const MOCK_GOAL = {
-  _id: "1",
-  title: "PS5",
-  category: "Gaming",
-  targetAmount: 500,
-  currentAmount: 175,
-  savingPlan: "monthly",
-  deadline: "2025-06-01",
-  status: "active",
-  notes: "Been wanting this forever. No more payment plans!",
-  productUrl: "https://www.bestbuy.com/site/sony-playstation-5/6523167.p",
-  imageUrl: null,
-  transactions: [
-    {
-      _id: "t1",
-      type: "deposit",
-      amount: 100,
-      note: "Birthday money",
-      createdAt: "Apr 10, 2025",
-    },
-    {
-      _id: "t2",
-      type: "deposit",
-      amount: 75,
-      note: "Saved from lunch",
-      createdAt: "Apr 3, 2025",
-    },
-    {
-      _id: "t3",
-      type: "withdrawal",
-      amount: 25,
-      note: "Needed cash",
-      createdAt: "Mar 28, 2025",
-    },
-    {
-      _id: "t4",
-      type: "deposit",
-      amount: 25,
-      note: "Weekly save",
-      createdAt: "Mar 20, 2025",
-    },
-  ],
+type Transaction = {
+  _id: string;
+  type: "deposit" | "withdrawal";
+  amount: number;
+  note?: string;
+  createdAt: string;
+};
+
+type Goal = {
+  _id: string;
+  title: string;
+  category?: string;
+  targetAmount: number;
+  currentAmount: number;
+  savingPlan: string;
+  deadline?: string;
+  status: string;
+  notes?: string;
+  productUrl?: string;
+  imageUrl?: string | null;
 };
 
 type ModalType = "deposit" | "withdraw" | null;
@@ -72,11 +53,13 @@ function ActionModal({
   type,
   onClose,
   onConfirm,
+  isSubmitting,
 }: {
   visible: boolean;
   type: ModalType;
   onClose: () => void;
   onConfirm: (amount: string, note: string) => void;
+  isSubmitting: boolean;
 }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -99,11 +82,6 @@ function ActionModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      {/*
-        FIX: Tapping the dim overlay dismisses keyboard and closes modal.
-        KeyboardAvoidingView pushes the sheet up when the numpad appears,
-        keeping the confirm/cancel buttons visible at all times.
-      */}
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={modal.overlay}>
           <KeyboardAvoidingView
@@ -112,9 +90,7 @@ function ActionModal({
           >
             <TouchableWithoutFeedback>
               <View style={modal.sheet}>
-                {/* Handle */}
                 <View style={modal.handle} />
-
                 <Text style={modal.title}>
                   {isDeposit ? "💰 Add Money" : "💸 Withdraw"}
                 </Text>
@@ -123,8 +99,6 @@ function ActionModal({
                     ? "How much are you saving?"
                     : "How much do you need back?"}
                 </Text>
-
-                {/* Amount row with inline keyboard dismiss */}
                 <View style={modal.amountRow}>
                   <Text style={modal.dollarSign}>$</Text>
                   <TextInput
@@ -138,7 +112,6 @@ function ActionModal({
                     returnKeyType="done"
                     onSubmitEditing={Keyboard.dismiss}
                   />
-                  {/* ✅ "Done" pill dismisses the numpad without losing input */}
                   <TouchableOpacity
                     style={modal.keyboardDoneBtn}
                     onPress={Keyboard.dismiss}
@@ -146,8 +119,6 @@ function ActionModal({
                     <Text style={modal.keyboardDoneText}>Done</Text>
                   </TouchableOpacity>
                 </View>
-
-                {/* Note */}
                 <TextInput
                   style={modal.noteInput}
                   placeholder="Add a note (optional)"
@@ -157,17 +128,28 @@ function ActionModal({
                   returnKeyType="done"
                   onSubmitEditing={Keyboard.dismiss}
                 />
-
                 <TouchableOpacity
-                  style={[modal.confirmBtn, !isDeposit && modal.withdrawBtn]}
+                  style={[
+                    modal.confirmBtn,
+                    !isDeposit && modal.withdrawBtn,
+                    isSubmitting && { opacity: 0.7 },
+                  ]}
                   onPress={handleConfirm}
+                  disabled={isSubmitting}
                 >
-                  <Text style={modal.confirmText}>
-                    {isDeposit ? "Add to Goal" : "Withdraw"}
-                  </Text>
+                  {isSubmitting ? (
+                    <ActivityIndicator color={Colors.white} />
+                  ) : (
+                    <Text style={modal.confirmText}>
+                      {isDeposit ? "Add to Goal" : "Withdraw"}
+                    </Text>
+                  )}
                 </TouchableOpacity>
-
-                <TouchableOpacity style={modal.cancelBtn} onPress={onClose}>
+                <TouchableOpacity
+                  style={modal.cancelBtn}
+                  onPress={onClose}
+                  disabled={isSubmitting}
+                >
                   <Text style={modal.cancelText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
@@ -180,25 +162,115 @@ function ActionModal({
 }
 
 export default function GoalDetailScreen() {
-  const { id } = useLocalSearchParams();
-  const goal = MOCK_GOAL;
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { token } = useAuth();
+
+  const [goal, setGoal] = useState<Goal | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "transactions">(
     "overview",
   );
   const [modalType, setModalType] = useState<ModalType>(null);
+
+  const loadGoal = useCallback(
+    async (showRefresh = false) => {
+      if (!token || !id) return;
+      if (showRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
+
+      try {
+        const data = await goalsAPI.getOne(token, id as string);
+        setGoal(data.goal);
+        setTransactions(data.transactions);
+      } catch (err: any) {
+        Alert.alert("Error", err.message || "Could not load goal.");
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [token, id],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      loadGoal();
+    }, [loadGoal]),
+  );
+
+  const handleAction = async (amount: string, note: string) => {
+    if (!token || !goal) return;
+    setIsSubmitting(true);
+    try {
+      if (modalType === "deposit") {
+        const res = await transactionsAPI.deposit(token, {
+          goalId: goal._id,
+          amount: parseFloat(amount),
+          note,
+        });
+        if (res.goalCompleted) {
+          Alert.alert(
+            "Goal Completed! 🎉",
+            `You've reached your savings goal for "${goal.title}"!`,
+          );
+        } else {
+          Alert.alert("Done!", `$${amount} added successfully.`);
+        }
+      } else {
+        await transactionsAPI.withdraw(token, {
+          goalId: goal._id,
+          amount: parseFloat(amount),
+          note,
+        });
+        Alert.alert("Done!", `$${amount} withdrawn successfully.`);
+      }
+      setModalType(null);
+      loadGoal(); // re-fetch to get updated balance
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Transaction failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!token || !goal) return;
+    Alert.alert("Delete goal?", "This will also delete all transactions.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await goalsAPI.delete(token, goal._id);
+            router.replace("/(tabs)/goals");
+          } catch (err: any) {
+            Alert.alert("Error", err.message || "Could not delete goal.");
+          }
+        },
+      },
+    ]);
+  };
+
+  if (isLoading || !goal) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ActivityIndicator
+          color={Colors.primary}
+          style={{ flex: 1, marginTop: 80 }}
+        />
+      </SafeAreaView>
+    );
+  }
 
   const pct = Math.min(
     Math.round((goal.currentAmount / goal.targetAmount) * 100),
     100,
   );
   const remaining = goal.targetAmount - goal.currentAmount;
-
-  const handleAction = (amount: string, note: string) => {
-    // TODO Week 7: call transactionsAPI.deposit / withdraw
-    const verb = modalType === "deposit" ? "added" : "withdrawn";
-    Alert.alert("Done!", `$${amount} ${verb} successfully.`);
-    setModalType(null);
-  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -218,23 +290,32 @@ export default function GoalDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadGoal(true)}
+            tintColor={Colors.primary}
+          />
+        }
+      >
         {/* Hero Card */}
         <View style={styles.heroCard}>
           {goal.imageUrl ? (
             <Image source={{ uri: goal.imageUrl }} style={styles.heroImage} />
           ) : (
             <View style={styles.heroImagePlaceholder}>
-              <Text style={styles.heroEmoji}>🎮</Text>
+              <Text style={styles.heroEmoji}>🎯</Text>
             </View>
           )}
-
           <View style={styles.heroContent}>
             <View style={styles.heroTop}>
               <View>
                 <Text style={styles.heroTitle}>{goal.title}</Text>
                 <Text style={styles.heroCat}>
-                  {goal.category} · {goal.savingPlan}
+                  {goal.category ? `${goal.category} · ` : ""}
+                  {goal.savingPlan}
                 </Text>
               </View>
               {pct >= 100 && (
@@ -243,16 +324,12 @@ export default function GoalDetailScreen() {
                 </View>
               )}
             </View>
-
-            {/* Big number */}
             <Text style={styles.heroAmount}>
               ${goal.currentAmount.toLocaleString()}
             </Text>
             <Text style={styles.heroSub}>
               of ${goal.targetAmount.toLocaleString()} goal
             </Text>
-
-            {/* Progress Bar */}
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${pct}%` }]} />
             </View>
@@ -262,16 +339,18 @@ export default function GoalDetailScreen() {
                 ${remaining.toLocaleString()} to go
               </Text>
             </View>
-
-            {/* Deadline */}
-            <View style={styles.deadlineRow}>
-              <Ionicons
-                name="calendar-outline"
-                size={13}
-                color="rgba(255,255,255,0.7)"
-              />
-              <Text style={styles.deadlineText}>Due {goal.deadline}</Text>
-            </View>
+            {goal.deadline && (
+              <View style={styles.deadlineRow}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={13}
+                  color="rgba(255,255,255,0.7)"
+                />
+                <Text style={styles.deadlineText}>
+                  Due {goal.deadline.split("T")[0]}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -280,11 +359,11 @@ export default function GoalDetailScreen() {
           <TouchableOpacity
             style={styles.actionDeposit}
             onPress={() => setModalType("deposit")}
+            disabled={goal.status === "completed"}
           >
             <Ionicons name="add-circle" size={20} color={Colors.white} />
             <Text style={styles.actionDepositText}>Add Money</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.actionSecondary}
             onPress={() => setModalType("withdraw")}
@@ -296,7 +375,6 @@ export default function GoalDetailScreen() {
             />
             <Text style={styles.actionSecondaryText}>Withdraw</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.actionSecondary}
             onPress={() =>
@@ -347,7 +425,6 @@ export default function GoalDetailScreen() {
         {/* Tab Content */}
         {activeTab === "overview" ? (
           <View style={styles.tabContent}>
-            {/* Stats */}
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
                 <Text style={styles.statValue}>${goal.currentAmount}</Text>
@@ -362,33 +439,13 @@ export default function GoalDetailScreen() {
                 <Text style={styles.statLabel}>Complete</Text>
               </View>
             </View>
-
-            {/* Notes */}
             {goal.notes ? (
               <View style={styles.notesCard}>
                 <Text style={styles.notesLabel}>📝 Notes</Text>
                 <Text style={styles.notesText}>{goal.notes}</Text>
               </View>
             ) : null}
-
-            {/* Danger Zone */}
-            <TouchableOpacity
-              style={styles.dangerBtn}
-              onPress={() =>
-                Alert.alert(
-                  "Delete goal?",
-                  "This will also delete all transactions.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Delete",
-                      style: "destructive",
-                      onPress: () => router.replace("/(tabs)/goals"),
-                    },
-                  ],
-                )
-              }
-            >
+            <TouchableOpacity style={styles.dangerBtn} onPress={handleDelete}>
               <Ionicons
                 name="trash-outline"
                 size={16}
@@ -399,7 +456,7 @@ export default function GoalDetailScreen() {
           </View>
         ) : (
           <View style={styles.tabContent}>
-            {goal.transactions.map((tx) => (
+            {transactions.map((tx) => (
               <View key={tx._id} style={styles.txRow}>
                 <View
                   style={[
@@ -422,7 +479,9 @@ export default function GoalDetailScreen() {
                     {tx.note ||
                       (tx.type === "deposit" ? "Deposit" : "Withdrawal")}
                   </Text>
-                  <Text style={styles.txDate}>{tx.createdAt}</Text>
+                  <Text style={styles.txDate}>
+                    {new Date(tx.createdAt).toLocaleDateString()}
+                  </Text>
                 </View>
                 <Text
                   style={[
@@ -434,7 +493,7 @@ export default function GoalDetailScreen() {
                 </Text>
               </View>
             ))}
-            {goal.transactions.length === 0 && (
+            {transactions.length === 0 && (
               <Text style={styles.emptyText}>
                 No transactions yet. Start saving! 🐷
               </Text>
@@ -445,12 +504,12 @@ export default function GoalDetailScreen() {
         <View style={{ height: 48 }} />
       </ScrollView>
 
-      {/* Deposit / Withdraw Modal */}
       <ActionModal
         visible={modalType !== null}
         type={modalType}
         onClose={() => setModalType(null)}
         onConfirm={handleAction}
+        isSubmitting={isSubmitting}
       />
     </SafeAreaView>
   );
@@ -494,8 +553,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  // Hero
   heroCard: {
     marginHorizontal: 20,
     marginTop: 8,
@@ -563,8 +620,6 @@ const styles = StyleSheet.create({
   },
   deadlineRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   deadlineText: { fontSize: 13, color: "rgba(255,255,255,0.7)" },
-
-  // Actions
   actions: {
     flexDirection: "row",
     gap: 10,
@@ -602,8 +657,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12,
   },
-
-  // Product link
   productLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -620,8 +673,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.primary,
   },
-
-  // Tabs
   tabs: {
     flexDirection: "row",
     marginHorizontal: 20,
@@ -634,10 +685,7 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: Colors.primary },
   tabText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
   tabTextActive: { color: Colors.white },
-
   tabContent: { marginHorizontal: 20, marginTop: 16 },
-
-  // Stats
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
   statCard: {
     flex: 1,
@@ -653,8 +701,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 2,
   },
-
-  // Notes
   notesCard: {
     backgroundColor: Colors.white,
     borderRadius: 14,
@@ -668,8 +714,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   notesText: { fontSize: 14, color: Colors.textPrimary, lineHeight: 20 },
-
-  // Danger
   dangerBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -678,8 +722,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   dangerText: { fontSize: 14, fontWeight: "700", color: Colors.secondary },
-
-  // Transactions
   txRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -711,7 +753,6 @@ const styles = StyleSheet.create({
   },
 });
 
-// Modal styles
 const modal = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -740,11 +781,7 @@ const modal = StyleSheet.create({
     marginBottom: 4,
   },
   subtitle: { fontSize: 14, color: Colors.textSecondary, marginBottom: 24 },
-  amountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-  },
+  amountRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   dollarSign: {
     fontSize: 32,
     fontWeight: "800",
@@ -760,7 +797,6 @@ const modal = StyleSheet.create({
     borderBottomColor: Colors.primary,
     paddingBottom: 8,
   },
-  // "Done" pill next to the amount input — dismisses numpad without losing focus
   keyboardDoneBtn: {
     backgroundColor: Colors.primaryLight,
     borderRadius: 10,
@@ -768,11 +804,7 @@ const modal = StyleSheet.create({
     paddingVertical: 8,
     marginLeft: 10,
   },
-  keyboardDoneText: {
-    color: Colors.primary,
-    fontWeight: "700",
-    fontSize: 14,
-  },
+  keyboardDoneText: { color: Colors.primary, fontWeight: "700", fontSize: 14 },
   noteInput: {
     backgroundColor: Colors.background,
     borderRadius: 12,

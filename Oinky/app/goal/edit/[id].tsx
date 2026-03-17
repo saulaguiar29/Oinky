@@ -7,18 +7,21 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Image,
   Linking,
   Alert,
   Modal,
+  ActivityIndicator,
 } from "react-native";
-import { useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useState, useEffect } from "react";
 import { router, useLocalSearchParams, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Colors } from "../../../constants";
+import { useAuth } from "../../../context/AuthContext";
+import { goalsAPI } from "../../../services/api";
 
 const CATEGORIES = [
   { label: "Tech", icon: "💻" },
@@ -37,53 +40,62 @@ const PLANS = [
   { key: "monthly", label: "Monthly", icon: "🗓️" },
 ];
 
-// Ensures a URL has a scheme so Linking.openURL works correctly
 function normalizeUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   return `https://${url}`;
 }
 
-// Format a Date object as YYYY-MM-DD for display
 function formatDate(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
-// Parse a YYYY-MM-DD string into a Date (avoids timezone shifting)
 function parseDate(str: string): Date {
   const [y, m, d] = str.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
 
-// Mock pre-loaded data — Week 7 will load from goalsAPI.getOne(token, id)
-const MOCK_GOAL = {
-  _id: "1",
-  title: "PS5",
-  targetAmount: "500",
-  category: "Gaming",
-  deadline: "2025-06-01",
-  notes: "Been wanting this forever. No more payment plans!",
-  productUrl: "https://www.bestbuy.com/site/sony-playstation-5/6523167.p",
-  savingPlan: "monthly",
-  imageUrl: null as string | null,
-};
-
 export default function EditGoalScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { token } = useAuth();
 
-  // Pre-fill with existing goal data
-  const [title, setTitle] = useState(MOCK_GOAL.title);
-  const [targetAmount, setTargetAmount] = useState(MOCK_GOAL.targetAmount);
-  const [category, setCategory] = useState(MOCK_GOAL.category);
-  // Parse existing deadline string into a Date so the picker can use it
-  const [deadline, setDeadline] = useState<Date | null>(
-    MOCK_GOAL.deadline ? parseDate(MOCK_GOAL.deadline) : null,
-  );
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [title, setTitle] = useState("");
+  const [targetAmount, setTargetAmount] = useState("");
+  const [category, setCategory] = useState("");
+  const [deadline, setDeadline] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [notes, setNotes] = useState(MOCK_GOAL.notes);
-  const [productUrl, setProductUrl] = useState(MOCK_GOAL.productUrl);
-  const [savingPlan, setSavingPlan] = useState(MOCK_GOAL.savingPlan);
-  const [image, setImage] = useState<string | null>(MOCK_GOAL.imageUrl);
+  const [notes, setNotes] = useState("");
+  const [productUrl, setProductUrl] = useState("");
+  const [savingPlan, setSavingPlan] = useState("monthly");
+  const [image, setImage] = useState<string | null>(null);
+
+  // Load real goal data on mount
+  useEffect(() => {
+    const load = async () => {
+      if (!token || !id) return;
+      try {
+        const data = await goalsAPI.getOne(token, id as string);
+        const g = data.goal;
+        setTitle(g.title);
+        setTargetAmount(String(g.targetAmount));
+        setCategory(g.category || "");
+        setDeadline(g.deadline ? parseDate(g.deadline.split("T")[0]) : null);
+        setNotes(g.notes || "");
+        setProductUrl(g.productUrl || "");
+        setSavingPlan(g.savingPlan || "monthly");
+        setImage(g.imageUrl || null);
+      } catch (err: any) {
+        Alert.alert("Error", err.message || "Could not load goal.");
+        router.back();
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    load();
+  }, [token, id]);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -103,7 +115,6 @@ export default function EditGoalScreen() {
     if (!result.canceled) setImage(result.assets[0].uri);
   };
 
-  // Normalize URL before opening so bare domains work
   const handlePreviewLink = () => {
     const normalized = normalizeUrl(productUrl.trim());
     if (!normalized) return;
@@ -112,7 +123,6 @@ export default function EditGoalScreen() {
     );
   };
 
-  // Try PayPal app first, fall back to browser if not installed
   const handleConnectPayPal = async () => {
     try {
       await Linking.openURL("paypal://");
@@ -121,26 +131,48 @@ export default function EditGoalScreen() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title || !targetAmount) {
       Alert.alert("Missing info", "Goal name and target amount are required.");
       return;
     }
-    // TODO Week 7: call goalsAPI.update(token, id, {
-    //   title, targetAmount: parseFloat(targetAmount),
-    //   category, deadline: deadline?.toISOString(),
-    //   notes, productUrl: normalizeUrl(productUrl), savingPlan
-    // })
-    Alert.alert("Goal updated! ✅", `"${title}" has been saved.`, [
-      { text: "OK", onPress: () => router.back() },
-    ]);
+    if (!token || !id) return;
+
+    setIsSubmitting(true);
+    try {
+      await goalsAPI.update(token, id as string, {
+        title,
+        targetAmount: parseFloat(targetAmount),
+        category,
+        deadline: deadline?.toISOString(),
+        notes,
+        productUrl: productUrl ? normalizeUrl(productUrl) : undefined,
+        savingPlan,
+      });
+      Alert.alert("Goal updated! ✅", `"${title}" has been saved.`, [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not update goal.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ActivityIndicator
+          color={Colors.primary}
+          style={{ flex: 1, marginTop: 80 }}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Suppress the Stack header so our custom back button is the only one */}
       <Stack.Screen options={{ headerShown: false }} />
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -163,8 +195,16 @@ export default function EditGoalScreen() {
               />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Edit Goal</Text>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Text style={styles.saveBtnText}>Save</Text>
+            <TouchableOpacity
+              style={[styles.saveBtn, isSubmitting && { opacity: 0.7 }]}
+              onPress={handleSave}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color={Colors.white} size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -265,7 +305,7 @@ export default function EditGoalScreen() {
               </View>
             </View>
 
-            {/* Due Date — branded modal picker (matches create screen) */}
+            {/* Due Date */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Due Date</Text>
               <TouchableOpacity
@@ -298,7 +338,6 @@ export default function EditGoalScreen() {
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
-
               <Modal
                 visible={showDatePicker}
                 transparent
@@ -316,7 +355,6 @@ export default function EditGoalScreen() {
                         <Text style={styles.dateModalDoneText}>Done</Text>
                       </TouchableOpacity>
                     </View>
-
                     <View style={styles.datePickerCard}>
                       <DateTimePicker
                         value={deadline ?? new Date()}
@@ -332,7 +370,6 @@ export default function EditGoalScreen() {
                         style={{ width: "100%" }}
                       />
                     </View>
-
                     {deadline && (
                       <View style={styles.dateSelectedRow}>
                         <Ionicons
@@ -448,8 +485,16 @@ export default function EditGoalScreen() {
             </View>
 
             {/* Save Button */}
-            <TouchableOpacity style={styles.submitBtn} onPress={handleSave}>
-              <Text style={styles.submitText}>Save Changes</Text>
+            <TouchableOpacity
+              style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
+              onPress={handleSave}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color={Colors.white} />
+              ) : (
+                <Text style={styles.submitText}>Save Changes</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -495,9 +540,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 8,
+    minWidth: 60,
+    alignItems: "center",
   },
   saveBtnText: { color: Colors.white, fontSize: 14, fontWeight: "700" },
-
   infoBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -509,7 +555,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   infoText: { flex: 1, fontSize: 13, color: Colors.primary, fontWeight: "600" },
-
   imagePicker: {
     marginHorizontal: 20,
     borderRadius: 20,
@@ -542,7 +587,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   imagePlaceholderSub: { fontSize: 12, color: Colors.border },
-
   form: { paddingHorizontal: 20 },
   fieldGroup: { marginBottom: 22 },
   label: {
@@ -564,7 +608,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: -4,
   },
-
   input: {
     backgroundColor: Colors.white,
     borderWidth: 1.5,
@@ -577,7 +620,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textArea: { height: 90, textAlignVertical: "top", paddingTop: 14 },
-
   amountRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   currencyTag: {
     backgroundColor: Colors.primary,
@@ -589,8 +631,6 @@ const styles = StyleSheet.create({
   },
   currencyText: { color: Colors.white, fontSize: 20, fontWeight: "800" },
   amountInput: { fontSize: 22, fontWeight: "700" },
-
-  // Category
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   categoryBtn: {
     width: "22%",
@@ -614,8 +654,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   categoryLabelActive: { color: Colors.primary },
-
-  // Date picker trigger button
   dateBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -629,8 +667,6 @@ const styles = StyleSheet.create({
   },
   dateBtnText: { flex: 1, fontSize: 15, color: Colors.textSecondary },
   dateBtnTextFilled: { color: Colors.textPrimary, fontWeight: "600" },
-
-  // Date picker modal
   dateModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -651,11 +687,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  dateModalTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: Colors.white,
-  },
+  dateModalTitle: { fontSize: 17, fontWeight: "800", color: Colors.white },
   dateModalDoneBtn: {
     backgroundColor: "rgba(255,255,255,0.2)",
     borderRadius: 10,
@@ -678,18 +710,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 12,
   },
-  dateSelectedText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.success,
-  },
-
-  // Input with icon
+  dateSelectedText: { fontSize: 14, fontWeight: "600", color: Colors.success },
   inputIcon: { flexDirection: "row", alignItems: "center" },
   inputIconLeft: { position: "absolute", left: 14, zIndex: 1 },
   inputWithIcon: { paddingLeft: 42 },
-
-  // Saving Plan
   planRow: { flexDirection: "row", gap: 10 },
   planBtn: {
     flex: 1,
@@ -708,8 +732,6 @@ const styles = StyleSheet.create({
   planIcon: { fontSize: 20 },
   planLabel: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
   planLabelActive: { color: Colors.white },
-
-  // Product link preview
   previewLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -717,8 +739,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   previewLinkText: { fontSize: 13, color: Colors.primary, fontWeight: "600" },
-
-  // PayPal
   paypalBtn: {
     backgroundColor: "#003087",
     borderRadius: 14,
@@ -726,8 +746,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   paypalBtnText: { color: Colors.white, fontSize: 15, fontWeight: "700" },
-
-  // Submit / cancel
   submitBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 16,

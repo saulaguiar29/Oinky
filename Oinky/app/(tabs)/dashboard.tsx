@@ -4,41 +4,25 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from "react-native";
-import { Link } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Link, router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useState } from "react";
 import { Colors } from "../../constants";
+import { useAuth } from "../../context/AuthContext";
+import { goalsAPI } from "../../services/api";
 
-// Mock data — will be replaced with real API calls in Week 7/8
-const MOCK_GOALS = [
-  {
-    _id: "1",
-    title: "PS5",
-    targetAmount: 500,
-    currentAmount: 175,
-    status: "active",
-  },
-  {
-    _id: "2",
-    title: "Japan Trip",
-    targetAmount: 2000,
-    currentAmount: 640,
-    status: "active",
-  },
-  {
-    _id: "3",
-    title: "AirPods Pro",
-    targetAmount: 250,
-    currentAmount: 250,
-    status: "completed",
-  },
-];
-
-const totalSaved = MOCK_GOALS.filter((g) => g.status === "active").reduce(
-  (sum, g) => sum + g.currentAmount,
-  0,
-);
+type Goal = {
+  _id: string;
+  title: string;
+  targetAmount: number;
+  currentAmount: number;
+  status: string;
+};
 
 function ProgressBar({ current, target }: { current: number; target: number }) {
   const pct = Math.min((current / target) * 100, 100);
@@ -49,7 +33,7 @@ function ProgressBar({ current, target }: { current: number; target: number }) {
   );
 }
 
-function GoalCard({ goal }: { goal: (typeof MOCK_GOALS)[0] }) {
+function GoalCard({ goal }: { goal: Goal }) {
   const pct = Math.round((goal.currentAmount / goal.targetAmount) * 100);
   return (
     <Link href={`/goal/${goal._id}`} asChild>
@@ -77,13 +61,59 @@ function GoalCard({ goal }: { goal: (typeof MOCK_GOALS)[0] }) {
 }
 
 export default function DashboardScreen() {
+  const { user, token } = useAuth();
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [totalSaved, setTotalSaved] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadGoals = useCallback(
+    async (showRefresh = false) => {
+      if (!token) return;
+      if (showRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
+
+      try {
+        const data = await goalsAPI.getAll(token, "active");
+        setGoals(data.goals);
+        setTotalSaved(data.totalSaved);
+      } catch (err: any) {
+        Alert.alert("Error", err.message || "Could not load goals.");
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [token],
+  );
+
+  // Reload whenever the tab comes into focus (e.g. after creating a goal)
+  useFocusEffect(
+    useCallback(() => {
+      loadGoals();
+    }, [loadGoals]),
+  );
+
+  const displayName = user?.displayName?.split(" ")[0] || "there";
+  const activeGoals = goals.filter((g) => g.status === "active");
+
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadGoals(true)}
+            tintColor={Colors.primary}
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.greeting}>Hey there 👋</Text>
+            <Text style={styles.greeting}>Hey {displayName} 👋</Text>
             <Text style={styles.subGreeting}>Here's your savings overview</Text>
           </View>
           <Text style={styles.piggy}>🐷</Text>
@@ -94,8 +124,8 @@ export default function DashboardScreen() {
           <Text style={styles.totalLabel}>Total Saved</Text>
           <Text style={styles.totalAmount}>${totalSaved.toLocaleString()}</Text>
           <Text style={styles.totalSub}>
-            across {MOCK_GOALS.filter((g) => g.status === "active").length}{" "}
-            active goals
+            across {activeGoals.length} active goal
+            {activeGoals.length !== 1 ? "s" : ""}
           </Text>
         </View>
 
@@ -109,9 +139,17 @@ export default function DashboardScreen() {
           </Link>
         </View>
 
-        {MOCK_GOALS.filter((g) => g.status === "active").map((goal) => (
-          <GoalCard key={goal._id} goal={goal} />
-        ))}
+        {isLoading ? (
+          <ActivityIndicator color={Colors.primary} style={{ marginTop: 32 }} />
+        ) : activeGoals.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🐷</Text>
+            <Text style={styles.emptyText}>No active goals yet.</Text>
+            <Text style={styles.emptySub}>Tap below to create your first!</Text>
+          </View>
+        ) : (
+          activeGoals.map((goal) => <GoalCard key={goal._id} goal={goal} />)
+        )}
 
         {/* Add Goal Button */}
         <Link href="/goal/create" asChild>
@@ -216,4 +254,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   addButtonText: { color: Colors.white, fontSize: 16, fontWeight: "700" },
+  emptyState: { alignItems: "center", paddingVertical: 40 },
+  emptyEmoji: { fontSize: 48, marginBottom: 12 },
+  emptyText: { fontSize: 16, fontWeight: "700", color: Colors.textPrimary },
+  emptySub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },
 });
