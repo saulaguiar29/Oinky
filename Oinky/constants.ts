@@ -10,4 +10,5 @@ export const Colors = {
   textSecondary: "#9389B0",
 };
 
-export const API_BASE_URL = "http://localhost:5001/api"; // Update with your IP for device testing
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:5001/api";
