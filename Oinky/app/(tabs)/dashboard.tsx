@@ -24,6 +24,7 @@ type Goal = {
   status: string;
 };
 
+// ─── Progress Bar ─────────────────────────────────────────────────────────────
 function ProgressBar({ current, target }: { current: number; target: number }) {
   const pct = Math.min((current / target) * 100, 100);
   return (
@@ -33,6 +34,7 @@ function ProgressBar({ current, target }: { current: number; target: number }) {
   );
 }
 
+// ─── Goal Card ────────────────────────────────────────────────────────────────
 function GoalCard({ goal }: { goal: Goal }) {
   const pct = Math.round((goal.currentAmount / goal.targetAmount) * 100);
   return (
@@ -60,6 +62,35 @@ function GoalCard({ goal }: { goal: Goal }) {
   );
 }
 
+// ─── Savings Breakdown Chart ──────────────────────────────────────────────────
+function SavingsBreakdownChart({ goals }: { goals: Goal[] }) {
+  if (goals.length === 0) return null;
+
+  return (
+    <View style={chartStyles.container}>
+      <Text style={chartStyles.title}>Savings Breakdown</Text>
+      {goals.map((goal) => {
+        const pct = Math.min(
+          (goal.currentAmount / goal.targetAmount) * 100,
+          100,
+        );
+        return (
+          <View key={goal._id} style={chartStyles.row}>
+            <Text style={chartStyles.label} numberOfLines={1}>
+              {goal.title}
+            </Text>
+            <View style={chartStyles.barTrack}>
+              <View style={[chartStyles.barFill, { width: `${pct}%` }]} />
+            </View>
+            <Text style={chartStyles.pct}>{Math.round(pct)}%</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Dashboard Screen
 export default function DashboardScreen() {
   const { user, token } = useAuth();
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -87,7 +118,6 @@ export default function DashboardScreen() {
     [token],
   );
 
-  // Reload whenever the tab comes into focus (e.g. after creating a goal)
   useFocusEffect(
     useCallback(() => {
       loadGoals();
@@ -129,7 +159,10 @@ export default function DashboardScreen() {
           </Text>
         </View>
 
-        {/* Goals Section */}
+        {/* ── Savings Breakdown Chart (shows after data loads) ── */}
+        {!isLoading && <SavingsBreakdownChart goals={activeGoals} />}
+
+        {/* Active Goals Section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Active Goals</Text>
           <Link href="/(tabs)/goals" asChild>
@@ -165,6 +198,7 @@ export default function DashboardScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   container: { flex: 1, paddingHorizontal: 20 },
@@ -258,4 +292,50 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
   emptyText: { fontSize: 16, fontWeight: "700", color: Colors.textPrimary },
   emptySub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },
+});
+
+const chartStyles = StyleSheet.create({
+  container: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: Colors.textPrimary,
+    marginBottom: 16,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    gap: 10,
+  },
+  label: {
+    width: 90,
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  barTrack: {
+    flex: 1,
+    height: 10,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 5,
+    overflow: "hidden",
+  },
+  barFill: {
+    height: "100%",
+    backgroundColor: Colors.primary,
+    borderRadius: 5,
+  },
+  pct: {
+    width: 36,
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textPrimary,
+    textAlign: "right",
+  },
 });
