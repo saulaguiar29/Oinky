@@ -1,10 +1,25 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
+import * as Notifications from "expo-notifications";
+import { router } from "expo-router";
 import { AuthProvider } from "../context/AuthContext";
 
 export default function RootLayout() {
+  // Deep link into the correct goal when user taps a notification
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const goalId = response.notification.request.content.data?.goalId;
+        if (goalId) {
+          router.push(`/goal/${goalId}`);
+        }
+      },
+    );
+    return () => sub.remove();
+  }, []);
+
   return (
-    // AuthProvider wraps everything so all screens can access auth state
     <AuthProvider>
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }}>

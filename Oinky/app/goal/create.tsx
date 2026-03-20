@@ -23,6 +23,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Colors } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
 import { goalsAPI } from "../../services/api";
+import { scheduleGoalReminder } from "../../services/notifications";
 
 const CATEGORIES = [
   { label: "Tech", icon: "💻" },
@@ -120,7 +121,7 @@ export default function CreateGoalScreen() {
 
     setIsSubmitting(true);
     try {
-      await goalsAPI.create(token, {
+      const res = await goalsAPI.create(token, {
         title,
         targetAmount: target,
         currentAmount: starting,
@@ -130,6 +131,13 @@ export default function CreateGoalScreen() {
         productUrl: productUrl ? normalizeUrl(productUrl) : undefined,
         savingPlan,
       });
+
+      await scheduleGoalReminder({
+        _id: res.goal._id,
+        title,
+        savingPlan,
+      });
+
       Alert.alert("Goal created! 🐷", `"${title}" is ready to save towards.`, [
         { text: "Let's go!", onPress: () => router.replace("/(tabs)/goals") },
       ]);

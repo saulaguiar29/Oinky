@@ -23,6 +23,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
 import { goalsAPI, transactionsAPI } from "../../services/api";
+import {
+  scheduleMissedPaymentNudge,
+  cancelGoalReminder,
+} from "../../services/notifications";
 
 type Transaction = {
   _id: string;
@@ -212,11 +216,19 @@ export default function GoalDetailScreen() {
           note,
         });
         if (res.goalCompleted) {
+          // Goal is done — cancel all reminders
+          await cancelGoalReminder(goal._id);
           Alert.alert(
             "Goal Completed! 🎉",
             `You've reached your savings goal for "${goal.title}"!`,
           );
         } else {
+          // Reset the missed payment nudge timer since they just saved
+          await scheduleMissedPaymentNudge({
+            _id: goal._id,
+            title: goal.title,
+            savingPlan: goal.savingPlan,
+          });
           Alert.alert("Done!", `$${amount} added successfully.`);
         }
       } else {
@@ -228,7 +240,7 @@ export default function GoalDetailScreen() {
         Alert.alert("Done!", `$${amount} withdrawn successfully.`);
       }
       setModalType(null);
-      loadGoal(); // re-fetch to get updated balance
+      loadGoal();
     } catch (err: any) {
       Alert.alert("Error", err.message || "Transaction failed.");
     } finally {
@@ -246,6 +258,8 @@ export default function GoalDetailScreen() {
         onPress: async () => {
           try {
             await goalsAPI.delete(token, goal._id);
+            // Cancel notifications so they don't fire for a deleted goal
+            await cancelGoalReminder(goal._id);
             router.replace("/(tabs)/goals");
           } catch (err: any) {
             Alert.alert("Error", err.message || "Could not delete goal.");
