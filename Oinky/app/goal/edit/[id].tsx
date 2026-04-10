@@ -22,6 +22,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Colors } from "../../../constants";
 import { useAuth } from "../../../context/AuthContext";
 import { goalsAPI } from "../../../services/api";
+import { uploadGoalImage } from "../../../services/uploadImage";
 
 const CATEGORIES = [
   { label: "Tech", icon: "💻" },
@@ -71,6 +72,7 @@ export default function EditGoalScreen() {
   const [productUrl, setProductUrl] = useState("");
   const [savingPlan, setSavingPlan] = useState("monthly");
   const [image, setImage] = useState<string | null>(null);
+  const [imageChanged, setImageChanged] = useState(false);
 
   // Load real goal data on mount
   useEffect(() => {
@@ -112,7 +114,10 @@ export default function EditGoalScreen() {
       aspect: [16, 9],
       quality: 0.8,
     });
-    if (!result.canceled) setImage(result.assets[0].uri);
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+      setImageChanged(true);
+    }
   };
 
   const handlePreviewLink = () => {
@@ -140,6 +145,15 @@ export default function EditGoalScreen() {
 
     setIsSubmitting(true);
     try {
+      let imageUrl: string | undefined;
+      if (imageChanged && image) {
+        try {
+          imageUrl = await uploadGoalImage(image, id as string, token);
+        } catch (e) {
+          console.warn("Image upload failed (non-fatal):", e);
+        }
+      }
+
       await goalsAPI.update(token, id as string, {
         title,
         targetAmount: parseFloat(targetAmount),
@@ -148,6 +162,7 @@ export default function EditGoalScreen() {
         notes,
         productUrl: productUrl ? normalizeUrl(productUrl) : undefined,
         savingPlan,
+        ...(imageUrl ? { imageUrl } : {}),
       });
       Alert.alert("Goal updated! ✅", `"${title}" has been saved.`, [
         { text: "OK", onPress: () => router.back() },

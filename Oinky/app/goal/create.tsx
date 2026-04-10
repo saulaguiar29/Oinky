@@ -24,6 +24,7 @@ import { Colors } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
 import { goalsAPI } from "../../services/api";
 import { scheduleGoalReminder } from "../../services/notifications";
+import { uploadGoalImage } from "../../services/uploadImage";
 
 const CATEGORIES = [
   { label: "Tech", icon: "💻" },
@@ -131,6 +132,16 @@ export default function CreateGoalScreen() {
         productUrl: productUrl ? normalizeUrl(productUrl) : undefined,
         savingPlan,
       });
+
+      // Upload image if one was picked, then save the URL to the goal
+      if (image) {
+        try {
+          const imageUrl = await uploadGoalImage(image, res.goal._id, token);
+          await goalsAPI.update(token, res.goal._id, { imageUrl });
+        } catch (e) {
+          console.warn("Image upload failed (non-fatal):", e);
+        }
+      }
 
       await scheduleGoalReminder({
         _id: res.goal._id,

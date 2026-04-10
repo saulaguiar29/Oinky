@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, router, useFocusEffect } from "expo-router";
@@ -22,6 +23,7 @@ type Goal = {
   targetAmount: number;
   currentAmount: number;
   status: string;
+  imageUrl?: string | null;
 };
 
 // ─── Progress Bar ─────────────────────────────────────────────────────────────
@@ -40,22 +42,33 @@ function GoalCard({ goal }: { goal: Goal }) {
   return (
     <Link href={`/goal/${goal._id}`} asChild>
       <TouchableOpacity style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>{goal.title}</Text>
-          {goal.status === "completed" && (
-            <View style={styles.completedBadge}>
-              <Text style={styles.completedText}>✓ Done</Text>
+        <View style={styles.cardRow}>
+          {goal.imageUrl ? (
+            <Image source={{ uri: goal.imageUrl }} style={styles.thumbnail} />
+          ) : (
+            <View style={styles.thumbnailPlaceholder}>
+              <Text style={styles.thumbnailEmoji}>🎯</Text>
             </View>
           )}
-        </View>
-        <ProgressBar current={goal.currentAmount} target={goal.targetAmount} />
-        <View style={styles.cardFooter}>
-          <Text style={styles.cardAmount}>
-            ${goal.currentAmount.toLocaleString()} saved
-          </Text>
-          <Text style={styles.cardPct}>
-            {pct}% of ${goal.targetAmount.toLocaleString()}
-          </Text>
+          <View style={styles.cardContent}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>{goal.title}</Text>
+              {goal.status === "completed" && (
+                <View style={styles.completedBadge}>
+                  <Text style={styles.completedText}>✓ Done</Text>
+                </View>
+              )}
+            </View>
+            <ProgressBar current={goal.currentAmount} target={goal.targetAmount} />
+            <View style={styles.cardFooter}>
+              <Text style={styles.cardAmount}>
+                ${goal.currentAmount.toLocaleString()} saved
+              </Text>
+              <Text style={styles.cardPct}>
+                {pct}% of ${goal.targetAmount.toLocaleString()}
+              </Text>
+            </View>
+          </View>
         </View>
       </TouchableOpacity>
     </Link>
@@ -241,7 +254,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 18,
+    padding: 12,
     marginBottom: 12,
     shadowColor: "#000",
     shadowOpacity: 0.05,
@@ -249,6 +262,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
+  cardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  thumbnail: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+  },
+  thumbnailPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  thumbnailEmoji: { fontSize: 24 },
+  cardContent: { flex: 1 },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",

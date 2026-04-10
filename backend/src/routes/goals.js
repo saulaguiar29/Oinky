@@ -3,6 +3,7 @@ const router = express.Router();
 const protect = require('../middleware/auth');
 const SavingsGoal = require('../models/SavingsGoal');
 const Transaction = require('../models/Transaction');
+const admin = require('firebase-admin');
 
 /**
  * GET /api/goals
@@ -195,6 +196,40 @@ router.post('/summary/savings-plan', protect, async (req, res) => {
         deadline,
       },
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/goals/:id/image
+ * Upload a goal image (base64) to Firebase Storage and save the URL
+ */
+router.post('/:id/image', protect, async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ success: false, message: 'imageBase64 is required' });
+    }
+
+    const goal = await SavingsGoal.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!goal) {
+      return res.status(404).json({ success: false, message: 'Goal not found' });
+    }
+
+    const bucket = admin.storage().bucket();
+    const fileName = `goal-images/${req.params.id}-${Date.now()}.jpg`;
+    const file = bucket.file(fileName);
+
+    const buffer = Buffer.from(imageBase64, 'base64');
+    await file.save(buffer, { contentType: 'image/jpeg' });
+    await file.makePublic();
+
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+    await SavingsGoal.findByIdAndUpdate(req.params.id, { imageUrl });
+
+    res.json({ success: true, imageUrl });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

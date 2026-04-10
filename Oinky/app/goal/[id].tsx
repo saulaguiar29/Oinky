@@ -68,6 +68,7 @@ function ActionModal({
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const isDeposit = type === "deposit";
+  const parsedAmount = parseFloat(amount) || 0;
 
   const handleConfirm = () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -77,6 +78,20 @@ function ActionModal({
     onConfirm(amount, note);
     setAmount("");
     setNote("");
+  };
+
+  const openPayPal = async () => {
+    const appUrl = `paypal://transfer?amount=${parsedAmount}&currencyCode=USD`;
+    const webUrl = `https://www.paypal.com/myaccount/transfer/homepage`;
+    const canOpen = await Linking.canOpenURL(appUrl);
+    Linking.openURL(canOpen ? appUrl : webUrl);
+  };
+
+  const openVenmo = async () => {
+    const appUrl = `venmo://paycharge?txn=pay&note=Savings&amount=${parsedAmount}`;
+    const webUrl = `https://venmo.com/`;
+    const canOpen = await Linking.canOpenURL(appUrl);
+    Linking.openURL(canOpen ? appUrl : webUrl);
   };
 
   return (
@@ -132,6 +147,16 @@ function ActionModal({
                   returnKeyType="done"
                   onSubmitEditing={Keyboard.dismiss}
                 />
+                {isDeposit && parsedAmount > 0 && (
+                  <View style={modal.paymentRow}>
+                    <TouchableOpacity style={modal.paypalBtn} onPress={openPayPal}>
+                      <Text style={modal.paypalBtnText}>💳 PayPal</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={modal.venmoBtn} onPress={openVenmo}>
+                      <Text style={modal.venmoBtnText}>💙 Venmo</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 <TouchableOpacity
                   style={[
                     modal.confirmBtn,
@@ -838,4 +863,25 @@ const modal = StyleSheet.create({
   confirmText: { color: Colors.white, fontSize: 16, fontWeight: "800" },
   cancelBtn: { alignItems: "center", paddingVertical: 10 },
   cancelText: { fontSize: 15, color: Colors.textSecondary, fontWeight: "600" },
+  paymentRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 14,
+  },
+  paypalBtn: {
+    flex: 1,
+    backgroundColor: "#0070BA",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  paypalBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  venmoBtn: {
+    flex: 1,
+    backgroundColor: "#3D95CE",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  venmoBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 });

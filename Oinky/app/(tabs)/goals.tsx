@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useFocusEffect } from "expo-router";
@@ -24,6 +25,7 @@ type Goal = {
   status: string;
   savingPlan: string;
   deadline?: string;
+  imageUrl?: string | null;
 };
 
 export default function GoalsScreen() {
@@ -99,30 +101,44 @@ export default function GoalsScreen() {
               active.map((goal) => (
                 <Link key={goal._id} href={`/goal/${goal._id}`} asChild>
                   <TouchableOpacity style={styles.card}>
-                    <View style={styles.cardTop}>
-                      <Text style={styles.cardTitle}>{goal.title}</Text>
-                      <Text style={styles.cardPlan}>{goal.savingPlan}</Text>
-                    </View>
-                    <View style={styles.progressTrack}>
-                      <View
-                        style={[
-                          styles.progressFill,
-                          {
-                            width: `${Math.min((goal.currentAmount / goal.targetAmount) * 100, 100)}%`,
-                          },
-                        ]}
-                      />
-                    </View>
-                    <View style={styles.cardBottom}>
-                      <Text style={styles.cardSaved}>
-                        ${goal.currentAmount} / ${goal.targetAmount}
-                      </Text>
-                      <Text style={styles.cardPct}>
-                        {Math.round(
-                          (goal.currentAmount / goal.targetAmount) * 100,
-                        )}
-                        %
-                      </Text>
+                    <View style={styles.cardRow}>
+                      {goal.imageUrl ? (
+                        <Image
+                          source={{ uri: goal.imageUrl }}
+                          style={styles.thumbnail}
+                        />
+                      ) : (
+                        <View style={styles.thumbnailPlaceholder}>
+                          <Text style={styles.thumbnailEmoji}>🎯</Text>
+                        </View>
+                      )}
+                      <View style={styles.cardContent}>
+                        <View style={styles.cardTop}>
+                          <Text style={styles.cardTitle}>{goal.title}</Text>
+                          <Text style={styles.cardPlan}>{goal.savingPlan}</Text>
+                        </View>
+                        <View style={styles.progressTrack}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              {
+                                width: `${Math.min((goal.currentAmount / goal.targetAmount) * 100, 100)}%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <View style={styles.cardBottom}>
+                          <Text style={styles.cardSaved}>
+                            ${goal.currentAmount} / ${goal.targetAmount}
+                          </Text>
+                          <Text style={styles.cardPct}>
+                            {Math.round(
+                              (goal.currentAmount / goal.targetAmount) * 100,
+                            )}
+                            %
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   </TouchableOpacity>
                 </Link>
@@ -140,17 +156,31 @@ export default function GoalsScreen() {
                     <TouchableOpacity
                       style={[styles.card, styles.completedCard]}
                     >
-                      <View style={styles.cardTop}>
-                        <Text style={styles.cardTitle}>{goal.title}</Text>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={20}
-                          color={Colors.success}
-                        />
+                      <View style={styles.cardRow}>
+                        {goal.imageUrl ? (
+                          <Image
+                            source={{ uri: goal.imageUrl }}
+                            style={styles.thumbnail}
+                          />
+                        ) : (
+                          <View style={styles.thumbnailPlaceholder}>
+                            <Text style={styles.thumbnailEmoji}>🎯</Text>
+                          </View>
+                        )}
+                        <View style={styles.cardContent}>
+                          <View style={styles.cardTop}>
+                            <Text style={styles.cardTitle}>{goal.title}</Text>
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={20}
+                              color={Colors.success}
+                            />
+                          </View>
+                          <Text style={styles.completedSub}>
+                            ${goal.targetAmount} saved ✓
+                          </Text>
+                        </View>
                       </View>
-                      <Text style={styles.completedSub}>
-                        ${goal.targetAmount} saved ✓
-                      </Text>
                     </TouchableOpacity>
                   </Link>
                 ))}
@@ -195,7 +225,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 18,
+    padding: 12,
     marginBottom: 12,
     shadowColor: "#000",
     shadowOpacity: 0.05,
@@ -203,6 +233,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
+  cardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  thumbnail: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+  },
+  thumbnailPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    backgroundColor: Colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  thumbnailEmoji: { fontSize: 24 },
+  cardContent: { flex: 1 },
   completedCard: { opacity: 0.75 },
   cardTop: {
     flexDirection: "row",
