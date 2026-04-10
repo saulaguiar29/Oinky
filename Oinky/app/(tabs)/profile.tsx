@@ -2,11 +2,33 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import * as Notifications from "expo-notifications";
 import { Colors } from "../../constants";
 import { useAuth } from "../../context/AuthContext";
+import { requestNotificationPermission } from "../../services/notifications";
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
+
+  const handleTestNotification = async () => {
+    const granted = await requestNotificationPermission();
+    if (!granted) {
+      Alert.alert("Permission denied", "Enable notifications in Settings.");
+      return;
+    }
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🐷 Test notification!",
+        body: "Oinky notifications are working correctly.",
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 5,
+        repeats: false,
+      },
+    });
+    Alert.alert("Scheduled!", "A test notification will fire in 5 seconds. Background the app to see it.");
+  };
 
   const handleLogout = () => {
     Alert.alert("Log Out", "Are you sure you want to log out?", [
@@ -62,6 +84,12 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* TEST ONLY — remove before shipping */}
+        <TouchableOpacity style={styles.testBtn} onPress={handleTestNotification}>
+          <Ionicons name="notifications-outline" size={20} color="#fff" />
+          <Text style={styles.testBtnText}>Test Notification (5s)</Text>
+        </TouchableOpacity>
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
@@ -130,4 +158,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logoutText: { fontSize: 15, fontWeight: "700", color: Colors.secondary },
+  testBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 24,
+  },
+  testBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });
