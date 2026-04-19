@@ -11,12 +11,16 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Link, router } from "expo-router";
-import { useState } from "react";
-import { Colors } from "../../constants";
+import { useState, useMemo } from "react";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useTheme, ColorPalette } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 
 export default function SignupScreen() {
   const { signup } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +28,6 @@ export default function SignupScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignup = async () => {
-    // Validate all fields
     if (!name.trim() || !email.trim() || !password || !confirmPassword) {
       Alert.alert("Missing Info", "Please fill in all fields.");
       return;
@@ -46,8 +49,6 @@ export default function SignupScreen() {
       await signup(name.trim(), email.trim(), password);
       router.replace("/(tabs)/dashboard");
     } catch (error: any) {
-      console.log("Signup error code:", error.code); // ADD THIS LINE
-      console.log("Signup error message:", error.message); // ADD THIS LINE
       const msg = firebaseErrorMessage(error.code);
       Alert.alert("Sign Up Failed", msg);
     } finally {
@@ -66,7 +67,7 @@ export default function SignupScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>🐷</Text>
+          <MaterialCommunityIcons name="pig-variant" size={64} color={colors.primary} />
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Start saving toward your goals</Text>
         </View>
@@ -76,7 +77,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Full Name"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={colors.textSecondary}
             autoCapitalize="words"
             value={name}
             onChangeText={setName}
@@ -85,7 +86,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Email"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={colors.textSecondary}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -96,7 +97,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Password (min 6 characters)"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={colors.textSecondary}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
@@ -105,13 +106,12 @@ export default function SignupScreen() {
           <TextInput
             style={[
               styles.input,
-              // Highlight if passwords typed and don't match
               confirmPassword.length > 0 && password !== confirmPassword
                 ? styles.inputError
                 : null,
             ]}
             placeholder="Confirm Password"
-            placeholderTextColor={Colors.textSecondary}
+            placeholderTextColor={colors.textSecondary}
             secureTextEntry
             value={confirmPassword}
             onChangeText={setConfirmPassword}
@@ -119,7 +119,6 @@ export default function SignupScreen() {
             onSubmitEditing={handleSignup}
             returnKeyType="go"
           />
-          {/* Inline password mismatch hint */}
           {confirmPassword.length > 0 && password !== confirmPassword && (
             <Text style={styles.errorHint}>Passwords don't match</Text>
           )}
@@ -130,7 +129,7 @@ export default function SignupScreen() {
             disabled={isSubmitting}
           >
             {isSubmitting ? (
-              <ActivityIndicator color={Colors.white} />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.buttonText}>Create Account</Text>
             )}
@@ -150,7 +149,6 @@ export default function SignupScreen() {
   );
 }
 
-// Maps Firebase error codes to friendly messages
 function firebaseErrorMessage(code: string): string {
   switch (code) {
     case "auth/email-already-in-use":
@@ -166,84 +164,82 @@ function firebaseErrorMessage(code: string): string {
   }
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  scroll: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 28,
-    paddingVertical: 48,
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  logo: {
-    fontSize: 52,
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  form: {
-    gap: 14,
-  },
-  input: {
-    backgroundColor: Colors.white,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-  inputError: {
-    borderColor: Colors.secondary,
-  },
-  errorHint: {
-    fontSize: 12,
-    color: Colors.secondary,
-    fontWeight: "600",
-    marginTop: -8,
-    marginLeft: 4,
-  },
-  button: {
-    backgroundColor: Colors.primary,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  linkButton: {
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  linkText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
-  linkBold: {
-    color: Colors.primary,
-    fontWeight: "700",
-  },
-});
+function makeStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    scroll: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: 28,
+      paddingVertical: 48,
+    },
+    header: {
+      alignItems: "center",
+      marginBottom: 40,
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: "800",
+      color: c.textPrimary,
+      letterSpacing: -0.5,
+    },
+    subtitle: {
+      fontSize: 15,
+      color: c.textSecondary,
+      marginTop: 4,
+    },
+    form: {
+      gap: 14,
+    },
+    input: {
+      backgroundColor: c.surface,
+      borderWidth: 1.5,
+      borderColor: c.border,
+      borderRadius: 14,
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: c.textPrimary,
+    },
+    inputError: {
+      borderColor: c.secondary,
+    },
+    errorHint: {
+      fontSize: 12,
+      color: c.secondary,
+      fontWeight: "600",
+      marginTop: -8,
+      marginLeft: 4,
+    },
+    button: {
+      backgroundColor: c.primary,
+      borderRadius: 14,
+      paddingVertical: 16,
+      alignItems: "center",
+      marginTop: 4,
+    },
+    buttonDisabled: {
+      opacity: 0.7,
+    },
+    buttonText: {
+      color: c.white,
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    linkButton: {
+      alignItems: "center",
+      paddingVertical: 8,
+    },
+    linkText: {
+      color: c.textSecondary,
+      fontSize: 14,
+    },
+    linkBold: {
+      color: c.primary,
+      fontWeight: "700",
+    },
+  });
+}

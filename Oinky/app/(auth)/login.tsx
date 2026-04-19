@@ -10,18 +10,21 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Link, router } from "expo-router";
-import { useState } from "react";
-import { Colors } from "../../constants";
+import { useState, useMemo } from "react";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useTheme, ColorPalette } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 
 export default function LoginScreen() {
   const { login } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleLogin = async () => {
-    // Basic validation
     if (!email.trim() || !password) {
       Alert.alert("Missing Info", "Please enter your email and password.");
       return;
@@ -30,11 +33,8 @@ export default function LoginScreen() {
     setIsSubmitting(true);
     try {
       await login(email.trim(), password);
-      // onAuthStateChanged in AuthContext will update auth state,
-      // and index.tsx will redirect to dashboard automatically
       router.replace("/(tabs)/dashboard");
     } catch (error: any) {
-      // Map Firebase error codes to friendly messages
       const msg = firebaseErrorMessage(error.code);
       Alert.alert("Login Failed", msg);
     } finally {
@@ -49,7 +49,7 @@ export default function LoginScreen() {
     >
       {/* Logo / Header */}
       <View style={styles.header}>
-        <Text style={styles.logo}>🐷</Text>
+        <MaterialCommunityIcons name="pig-variant" size={64} color={colors.primary} />
         <Text style={styles.appName}>Oinky</Text>
         <Text style={styles.tagline}>Save smarter, spend better</Text>
       </View>
@@ -59,7 +59,7 @@ export default function LoginScreen() {
         <TextInput
           style={styles.input}
           placeholder="Email"
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={colors.textSecondary}
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
@@ -70,7 +70,7 @@ export default function LoginScreen() {
         <TextInput
           style={styles.input}
           placeholder="Password"
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={colors.textSecondary}
           secureTextEntry
           value={password}
           onChangeText={setPassword}
@@ -85,7 +85,7 @@ export default function LoginScreen() {
           disabled={isSubmitting}
         >
           {isSubmitting ? (
-            <ActivityIndicator color={Colors.white} />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.buttonText}>Log In</Text>
           )}
@@ -104,7 +104,6 @@ export default function LoginScreen() {
   );
 }
 
-// Maps Firebase auth error codes to user-friendly messages
 function firebaseErrorMessage(code: string): string {
   switch (code) {
     case "auth/invalid-email":
@@ -112,7 +111,6 @@ function firebaseErrorMessage(code: string): string {
     case "auth/user-not-found":
     case "auth/wrong-password":
     case "auth/invalid-credential":
-      // Combine these for security (don't reveal which is wrong)
       return "Incorrect email or password. Please try again.";
     case "auth/too-many-requests":
       return "Too many failed attempts. Please try again later.";
@@ -123,70 +121,68 @@ function firebaseErrorMessage(code: string): string {
   }
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    justifyContent: "center",
-    paddingHorizontal: 28,
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 48,
-  },
-  logo: {
-    fontSize: 64,
-    marginBottom: 8,
-  },
-  appName: {
-    fontSize: 36,
-    fontWeight: "800",
-    color: Colors.primary,
-    letterSpacing: -1,
-  },
-  tagline: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-  form: {
-    gap: 14,
-  },
-  input: {
-    backgroundColor: Colors.white,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: Colors.textPrimary,
-  },
-  button: {
-    backgroundColor: Colors.primary,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  linkButton: {
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  linkText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
-  linkBold: {
-    color: Colors.primary,
-    fontWeight: "700",
-  },
-});
+function makeStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background,
+      justifyContent: "center",
+      paddingHorizontal: 28,
+    },
+    header: {
+      alignItems: "center",
+      marginBottom: 48,
+    },
+    appName: {
+      fontSize: 36,
+      fontWeight: "800",
+      color: c.primary,
+      letterSpacing: -1,
+    },
+    tagline: {
+      fontSize: 15,
+      color: c.textSecondary,
+      marginTop: 4,
+    },
+    form: {
+      gap: 14,
+    },
+    input: {
+      backgroundColor: c.surface,
+      borderWidth: 1.5,
+      borderColor: c.border,
+      borderRadius: 14,
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: c.textPrimary,
+    },
+    button: {
+      backgroundColor: c.primary,
+      borderRadius: 14,
+      paddingVertical: 16,
+      alignItems: "center",
+      marginTop: 4,
+    },
+    buttonDisabled: {
+      opacity: 0.7,
+    },
+    buttonText: {
+      color: c.white,
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    linkButton: {
+      alignItems: "center",
+      paddingVertical: 8,
+    },
+    linkText: {
+      color: c.textSecondary,
+      fontSize: 14,
+    },
+    linkBold: {
+      color: c.primary,
+      fontWeight: "700",
+    },
+  });
+}

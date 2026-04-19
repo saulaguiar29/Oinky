@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.saulaguiar29.Oinky",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": ["paypal", "venmo"]
       }
     },
     "android": {

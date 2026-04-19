@@ -81,6 +81,24 @@ export const transactionsAPI = {
     ),
 };
 
+// ── Plaid ──────────────────────────────────────────────
+export const plaidAPI = {
+  createLinkToken: (token: string) =>
+    request("/plaid/create-link-token", { method: "POST" }, token),
+
+  exchangeToken: (token: string, public_token: string) =>
+    request(
+      "/plaid/exchange-token",
+      { method: "POST", body: JSON.stringify({ public_token }) },
+      token,
+    ),
+
+  getBalance: (token: string) => request("/plaid/balance", {}, token),
+
+  unlink: (token: string) =>
+    request("/plaid/unlink", { method: "DELETE" }, token),
+};
+
 // ── Auth ───────────────────────────────────────────────
 export const authAPI = {
   sync: (token: string) => request("/auth/sync", { method: "POST" }, token),

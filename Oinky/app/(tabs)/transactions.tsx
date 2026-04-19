@@ -2,602 +2,276 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
-  Alert,
   ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState, useEffect } from "react";
-import { router, useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Colors } from "../../constants";
+import { useCallback, useState, useMemo } from "react";
+import { useTheme, ColorPalette } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { goalsAPI, transactionsAPI } from "../../services/api";
+import { transactionsAPI } from "../../services/api";
 
-type Goal = {
+type Transaction = {
   _id: string;
-  title: string;
-  currentAmount: number;
-  targetAmount: number;
+  type: "deposit" | "withdrawal";
+  amount: number;
+  note?: string;
+  createdAt: string;
+  goalId: { _id: string; title: string } | null;
 };
 
-const GOAL_EMOJIS: Record<string, string> = {
-  Tech: "💻",
-  Travel: "✈️",
-  Fashion: "👟",
-  Gaming: "🎮",
-  Home: "🏠",
-  Health: "💪",
-  Food: "🍕",
-  Other: "🎯",
-};
+function groupByDate(transactions: Transaction[]): { label: string; items: Transaction[] }[] {
+  const map = new Map<string, Transaction[]>();
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
 
-export default function TransferScreen() {
-  const { from } = useLocalSearchParams<{ from: string }>();
+  for (const tx of transactions) {
+    const d = new Date(tx.createdAt);
+    let label: string;
+    if (d.toDateString() === today.toDateString()) {
+      label = "Today";
+    } else if (d.toDateString() === yesterday.toDateString()) {
+      label = "Yesterday";
+    } else {
+      label = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    }
+    if (!map.has(label)) map.set(label, []);
+    map.get(label)!.push(tx);
+  }
+
+  return Array.from(map.entries()).map(([label, items]) => ({ label, items }));
+}
+
+export default function ActivityScreen() {
   const { token } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [goals, setGoals] = useState<Goal[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedTo, setSelectedTo] = useState<string | null>(null);
-  const [amount, setAmount] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
+  const load = useCallback(
+    async (showRefresh = false) => {
       if (!token) return;
+      if (showRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
+
       try {
-        const data = await goalsAPI.getAll(token, "active");
-        setGoals(data.goals);
+        const data = await transactionsAPI.getAll(token);
+        setTransactions(data.transactions);
       } catch (err: any) {
-        Alert.alert("Error", err.message || "Could not load goals.");
+        Alert.alert("Error", err.message || "Could not load activity.");
       } finally {
         setIsLoading(false);
+        setIsRefreshing(false);
       }
-    };
-    load();
-  }, [token]);
+    },
+    [token],
+  );
 
-  const fromGoal = goals.find((g) => g._id === from) ?? goals[0];
-  const toGoals = goals.filter((g) => g._id !== fromGoal?._id);
-  const toGoal = toGoals.find((g) => g._id === selectedTo);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
-  const maxTransfer = fromGoal?.currentAmount ?? 0;
-  const parsedAmount = parseFloat(amount) || 0;
-  const isValid = selectedTo && parsedAmount > 0 && parsedAmount <= maxTransfer;
+  const totalDeposited = transactions
+    .filter((t) => t.type === "deposit")
+    .reduce((sum, t) => sum + t.amount, 0);
 
-  const handleTransfer = () => {
-    if (!isValid || !fromGoal || !toGoal) return;
-    Alert.alert(
-      "Confirm Transfer",
-      `Move $${parsedAmount.toFixed(2)} from "${fromGoal.title}" to "${toGoal.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Transfer",
-          onPress: async () => {
-            if (!token) return;
-            setIsSubmitting(true);
-            try {
-              await transactionsAPI.transfer(token, {
-                fromGoalId: fromGoal._id,
-                toGoalId: selectedTo,
-                amount: parsedAmount,
-              });
-              Alert.alert(
-                "Transferred! 🔄",
-                `$${parsedAmount.toFixed(2)} moved to "${toGoal.title}".`,
-                [
-                  {
-                    text: "Done",
-                    onPress: () => router.replace("/(tabs)/goals"),
-                  },
-                ],
-              );
-            } catch (err: any) {
-              Alert.alert("Error", err.message || "Transfer failed.");
-            } finally {
-              setIsSubmitting(false);
-            }
-          },
-        },
-      ],
-    );
-  };
+  const totalWithdrawn = transactions
+    .filter((t) => t.type === "withdrawal")
+    .reduce((sum, t) => sum + t.amount, 0);
 
-  const setMax = () => setAmount(maxTransfer.toString());
-
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <ActivityIndicator
-          color={Colors.primary}
-          style={{ flex: 1, marginTop: 80 }}
-        />
-      </SafeAreaView>
-    );
-  }
-
-  if (!fromGoal) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backBtn}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={22}
-              color={Colors.textPrimary}
-            />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Transfer Savings</Text>
-          <View style={{ width: 36 }} />
-        </View>
-        <View
-          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-        >
-          <Text style={{ color: Colors.textSecondary }}>No goals found.</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const groups = groupByDate(transactions);
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Transfer Savings</Text>
-        <View style={{ width: 36 }} />
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Explainer */}
-        <View style={styles.explainer}>
-          <Text style={styles.explainerText}>
-            Move money between your goals. Your total savings stays the same —
-            it just goes to a different goal. 🐷
-          </Text>
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => load(true)}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Activity</Text>
         </View>
 
-        {/* From Goal */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Transferring From</Text>
-          <View style={styles.fromCard}>
-            <Text style={styles.fromEmoji}>🎯</Text>
-            <View style={styles.fromInfo}>
-              <Text style={styles.fromTitle}>{fromGoal.title}</Text>
-              <Text style={styles.fromBalance}>
-                ${fromGoal.currentAmount.toLocaleString()} available
+        {/* Summary Cards */}
+        {!isLoading && transactions.length > 0 && (
+          <View style={styles.summaryRow}>
+            <View style={[styles.summaryCard, styles.summaryCardGreen]}>
+              <Ionicons name="arrow-down-circle" size={22} color={colors.success} />
+              <Text style={styles.summaryAmount}>
+                ${totalDeposited.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
+              <Text style={styles.summaryLabel}>Total Saved</Text>
             </View>
-            <View style={styles.fromBadge}>
-              <Text style={styles.fromBadgeText}>Source</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Amount */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Amount</Text>
-          <View style={styles.amountCard}>
-            <Text style={styles.dollarSign}>$</Text>
-            <TextInput
-              style={styles.amountInput}
-              placeholder="0.00"
-              placeholderTextColor={Colors.textSecondary}
-              keyboardType="decimal-pad"
-              value={amount}
-              onChangeText={setAmount}
-            />
-            <TouchableOpacity style={styles.maxBtn} onPress={setMax}>
-              <Text style={styles.maxText}>MAX</Text>
-            </TouchableOpacity>
-          </View>
-          {parsedAmount > maxTransfer && (
-            <View style={styles.errorRow}>
-              <Ionicons
-                name="alert-circle-outline"
-                size={14}
-                color={Colors.secondary}
-              />
-              <Text style={styles.errorText}>
-                Exceeds available balance of ${maxTransfer}
+            <View style={[styles.summaryCard, styles.summaryCardRed]}>
+              <Ionicons name="arrow-up-circle" size={22} color={colors.secondary} />
+              <Text style={[styles.summaryAmount, styles.summaryAmountRed]}>
+                ${totalWithdrawn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
-            </View>
-          )}
-          {parsedAmount > 0 && parsedAmount <= maxTransfer && (
-            <View style={styles.remainRow}>
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={14}
-                color={Colors.success}
-              />
-              <Text style={styles.remainText}>
-                ${(maxTransfer - parsedAmount).toFixed(2)} will stay in "
-                {fromGoal.title}"
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Arrow */}
-        <View style={styles.arrowRow}>
-          <View style={styles.arrowLine} />
-          <View style={styles.arrowCircle}>
-            <Ionicons name="arrow-down" size={20} color={Colors.white} />
-          </View>
-          <View style={styles.arrowLine} />
-        </View>
-
-        {/* To Goal */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Transfer To</Text>
-          {toGoals.length === 0 ? (
-            <View style={{ padding: 20, alignItems: "center" }}>
-              <Text style={{ color: Colors.textSecondary, fontSize: 14 }}>
-                No other active goals to transfer to.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.goalList}>
-              {toGoals.map((goal) => {
-                const pct = Math.round(
-                  (goal.currentAmount / goal.targetAmount) * 100,
-                );
-                const isSelected = selectedTo === goal._id;
-                return (
-                  <TouchableOpacity
-                    key={goal._id}
-                    style={[
-                      styles.goalOption,
-                      isSelected && styles.goalOptionSelected,
-                    ]}
-                    onPress={() => setSelectedTo(goal._id)}
-                  >
-                    <View style={styles.goalOptionLeft}>
-                      <Text style={styles.goalOptionEmoji}>🎯</Text>
-                      <View style={styles.goalOptionInfo}>
-                        <Text
-                          style={[
-                            styles.goalOptionTitle,
-                            isSelected && styles.goalOptionTitleSelected,
-                          ]}
-                        >
-                          {goal.title}
-                        </Text>
-                        <View style={styles.miniProgressTrack}>
-                          <View
-                            style={[
-                              styles.miniProgressFill,
-                              {
-                                width: `${pct}%`,
-                                backgroundColor: isSelected
-                                  ? Colors.white
-                                  : Colors.primary,
-                              },
-                            ]}
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.goalOptionSub,
-                            isSelected && styles.goalOptionSubSelected,
-                          ]}
-                        >
-                          ${goal.currentAmount} / ${goal.targetAmount} · {pct}%
-                        </Text>
-                      </View>
-                    </View>
-                    <View
-                      style={[styles.radio, isSelected && styles.radioSelected]}
-                    >
-                      {isSelected && <View style={styles.radioDot} />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-        </View>
-
-        {/* Preview */}
-        {isValid && toGoal && (
-          <View style={styles.previewCard}>
-            <Text style={styles.previewTitle}>Transfer Summary</Text>
-            <View style={styles.previewRow}>
-              <Text style={styles.previewLabel}>From</Text>
-              <Text style={styles.previewValue}>{fromGoal.title}</Text>
-            </View>
-            <View style={styles.previewRow}>
-              <Text style={styles.previewLabel}>To</Text>
-              <Text style={styles.previewValue}>{toGoal.title}</Text>
-            </View>
-            <View style={[styles.previewRow, styles.previewRowLast]}>
-              <Text style={styles.previewLabel}>Amount</Text>
-              <Text style={styles.previewAmount}>
-                ${parsedAmount.toFixed(2)}
-              </Text>
+              <Text style={styles.summaryLabel}>Total Withdrawn</Text>
             </View>
           </View>
         )}
 
-        {/* CTA */}
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[
-              styles.transferBtn,
-              (!isValid || isSubmitting) && styles.transferBtnDisabled,
-            ]}
-            onPress={handleTransfer}
-            disabled={!isValid || isSubmitting}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color={Colors.white} />
-            ) : (
-              <>
-                <Ionicons
-                  name="swap-horizontal"
-                  size={20}
-                  color={Colors.white}
-                />
-                <Text style={styles.transferBtnText}>Transfer Now</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
+        {isLoading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 48 }} />
+        ) : transactions.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="receipt-outline" size={52} color={colors.border} style={{ marginBottom: 12 }} />
+            <Text style={styles.emptyTitle}>No activity yet</Text>
+            <Text style={styles.emptySub}>
+              Deposits and withdrawals across all your goals will appear here.
+            </Text>
+          </View>
+        ) : (
+          groups.map((group) => (
+            <View key={group.label}>
+              <Text style={styles.groupLabel}>{group.label}</Text>
+              {group.items.map((tx) => (
+                <View key={tx._id} style={styles.txRow}>
+                  <View
+                    style={[
+                      styles.txIcon,
+                      tx.type === "deposit" ? styles.depositIcon : styles.withdrawIcon,
+                    ]}
+                  >
+                    <Ionicons
+                      name={tx.type === "deposit" ? "arrow-down" : "arrow-up"}
+                      size={16}
+                      color={tx.type === "deposit" ? colors.success : colors.secondary}
+                    />
+                  </View>
+                  <View style={styles.txInfo}>
+                    <Text style={styles.txGoal} numberOfLines={1}>
+                      {tx.goalId?.title ?? "Deleted goal"}
+                    </Text>
+                    <Text style={styles.txNote} numberOfLines={1}>
+                      {tx.note || (tx.type === "deposit" ? "Deposit" : "Withdrawal")}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.txAmount,
+                      tx.type === "withdrawal" && styles.txAmountRed,
+                    ]}
+                  >
+                    {tx.type === "deposit" ? "+" : "-"}$
+                    {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))
+        )}
 
-        <View style={{ height: 48 }} />
+        <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: Colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: Colors.textPrimary },
-  explainer: {
-    marginHorizontal: 20,
-    marginBottom: 8,
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 14,
-    padding: 14,
-  },
-  explainerText: {
-    fontSize: 13,
-    color: Colors.primary,
-    fontWeight: "600",
-    lineHeight: 19,
-  },
-  section: { paddingHorizontal: 20, marginTop: 20 },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Colors.textPrimary,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 10,
-  },
-  fromCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
-  fromEmoji: { fontSize: 32 },
-  fromInfo: { flex: 1 },
-  fromTitle: { fontSize: 16, fontWeight: "800", color: Colors.textPrimary },
-  fromBalance: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
-  fromBadge: {
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  fromBadgeText: { color: Colors.white, fontSize: 11, fontWeight: "700" },
-  amountCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-  },
-  dollarSign: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: Colors.textSecondary,
-    marginRight: 6,
-  },
-  amountInput: {
-    flex: 1,
-    fontSize: 34,
-    fontWeight: "800",
-    color: Colors.textPrimary,
-    paddingVertical: 16,
-  },
-  maxBtn: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  maxText: { color: Colors.primary, fontSize: 12, fontWeight: "800" },
-  errorRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 8,
-  },
-  errorText: { fontSize: 13, color: Colors.secondary, fontWeight: "600" },
-  remainRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 8,
-  },
-  remainText: { fontSize: 13, color: Colors.success, fontWeight: "600" },
-  arrowRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 20,
-    marginTop: 20,
-  },
-  arrowLine: { flex: 1, height: 1.5, backgroundColor: Colors.border },
-  arrowCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 12,
-  },
-  goalList: { gap: 10 },
-  goalOption: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  goalOptionSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary,
-  },
-  goalOptionLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  goalOptionEmoji: { fontSize: 28 },
-  goalOptionInfo: { flex: 1 },
-  goalOptionTitle: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: Colors.textPrimary,
-    marginBottom: 6,
-  },
-  goalOptionTitleSelected: { color: Colors.white },
-  miniProgressTrack: {
-    height: 5,
-    backgroundColor: "rgba(0,0,0,0.08)",
-    borderRadius: 3,
-    overflow: "hidden",
-    marginBottom: 4,
-  },
-  miniProgressFill: { height: "100%", borderRadius: 3 },
-  goalOptionSub: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: "600",
-  },
-  goalOptionSubSelected: { color: "rgba(255,255,255,0.75)" },
-  radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: Colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioSelected: { borderColor: Colors.white },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.white,
-  },
-  previewCard: {
-    marginHorizontal: 20,
-    marginTop: 20,
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  previewTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 12,
-  },
-  previewRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.background,
-  },
-  previewRowLast: { borderBottomWidth: 0 },
-  previewLabel: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontWeight: "600",
-  },
-  previewValue: { fontSize: 14, color: Colors.textPrimary, fontWeight: "700" },
-  previewAmount: { fontSize: 16, color: Colors.primary, fontWeight: "800" },
-  footer: { paddingHorizontal: 20, marginTop: 24 },
-  transferBtn: {
-    backgroundColor: Colors.primary,
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  transferBtnDisabled: { opacity: 0.4 },
-  transferBtnText: { color: Colors.white, fontSize: 17, fontWeight: "800" },
-  cancelBtn: { alignItems: "center", paddingVertical: 14 },
-  cancelText: { color: Colors.textSecondary, fontSize: 15, fontWeight: "600" },
-});
+function makeStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.background },
+    container: { flex: 1, paddingHorizontal: 20 },
+    headerRow: {
+      paddingTop: 24,
+      marginBottom: 20,
+    },
+    title: { fontSize: 28, fontWeight: "800", color: c.textPrimary },
+    summaryRow: {
+      flexDirection: "row",
+      gap: 12,
+      marginBottom: 24,
+    },
+    summaryCard: {
+      flex: 1,
+      borderRadius: 16,
+      padding: 16,
+      alignItems: "center",
+      gap: 4,
+    },
+    summaryCardGreen: { backgroundColor: c.depositBg },
+    summaryCardRed: { backgroundColor: c.withdrawBg },
+    summaryAmount: {
+      fontSize: 18,
+      fontWeight: "800",
+      color: c.success,
+    },
+    summaryAmountRed: { color: c.secondary },
+    summaryLabel: {
+      fontSize: 11,
+      fontWeight: "600",
+      color: c.textSecondary,
+    },
+    groupLabel: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: c.textSecondary,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    txRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 8,
+    },
+    txIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 11,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 12,
+    },
+    depositIcon: { backgroundColor: c.depositBg },
+    withdrawIcon: { backgroundColor: c.withdrawBg },
+    txInfo: { flex: 1 },
+    txGoal: { fontSize: 14, fontWeight: "700", color: c.textPrimary },
+    txNote: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+    txAmount: {
+      fontSize: 15,
+      fontWeight: "800",
+      color: c.success,
+    },
+    txAmountRed: { color: c.secondary },
+    emptyState: {
+      alignItems: "center",
+      paddingVertical: 60,
+      paddingHorizontal: 32,
+    },
+    emptyTitle: {
+      fontSize: 17,
+      fontWeight: "700",
+      color: c.textPrimary,
+      marginBottom: 6,
+    },
+    emptySub: {
+      fontSize: 14,
+      color: c.textSecondary,
+      textAlign: "center",
+      lineHeight: 20,
+    },
+  });
+}

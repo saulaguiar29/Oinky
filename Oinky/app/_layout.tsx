@@ -4,9 +4,11 @@ import { useEffect } from "react";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { AuthProvider } from "../context/AuthContext";
+import { ThemeProvider, useTheme } from "../context/ThemeContext";
 
-export default function RootLayout() {
-  // Deep link into the correct goal when user taps a notification
+function AppStack() {
+  const { isDark } = useTheme();
+
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
@@ -20,8 +22,8 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <AuthProvider>
-      <StatusBar style="dark" />
+    <>
+      <StatusBar style={isDark ? "light" : "dark"} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
@@ -42,6 +44,16 @@ export default function RootLayout() {
           }}
         />
       </Stack>
-    </AuthProvider>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <AppStack />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

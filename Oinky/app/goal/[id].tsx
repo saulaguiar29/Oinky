@@ -17,12 +17,13 @@ import {
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Colors } from "../../constants";
+import { useTheme, ColorPalette } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 import { goalsAPI, transactionsAPI } from "../../services/api";
+import { getPaymentPlan, formatShortDate } from "../../services/paymentPlan";
 import {
   scheduleMissedPaymentNudge,
   cancelGoalReminder,
@@ -65,6 +66,9 @@ function ActionModal({
   onConfirm: (amount: string, note: string) => void;
   isSubmitting: boolean;
 }) {
+  const { colors } = useTheme();
+  const modal = useMemo(() => makeModalStyles(colors), [colors]);
+
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const isDeposit = type === "deposit";
@@ -81,17 +85,22 @@ function ActionModal({
   };
 
   const openPayPal = async () => {
-    const appUrl = `paypal://transfer?amount=${parsedAmount}&currencyCode=USD`;
-    const webUrl = `https://www.paypal.com/myaccount/transfer/homepage`;
-    const canOpen = await Linking.canOpenURL(appUrl);
-    Linking.openURL(canOpen ? appUrl : webUrl);
+    const canOpen = await Linking.canOpenURL("paypal://");
+    if (canOpen) {
+      Linking.openURL("paypal://");
+    } else {
+      Linking.openURL("https://www.paypal.com/myaccount/transfer/homepage");
+    }
   };
 
   const openVenmo = async () => {
     const appUrl = `venmo://paycharge?txn=pay&note=Savings&amount=${parsedAmount}`;
-    const webUrl = `https://venmo.com/`;
-    const canOpen = await Linking.canOpenURL(appUrl);
-    Linking.openURL(canOpen ? appUrl : webUrl);
+    const canOpen = await Linking.canOpenURL("venmo://");
+    if (canOpen) {
+      Linking.openURL(appUrl);
+    } else {
+      Linking.openURL("https://venmo.com/");
+    }
   };
 
   return (
@@ -111,7 +120,7 @@ function ActionModal({
               <View style={modal.sheet}>
                 <View style={modal.handle} />
                 <Text style={modal.title}>
-                  {isDeposit ? "💰 Add Money" : "💸 Withdraw"}
+                  {isDeposit ? "Add Money" : "Withdraw"}
                 </Text>
                 <Text style={modal.subtitle}>
                   {isDeposit
@@ -123,7 +132,7 @@ function ActionModal({
                   <TextInput
                     style={modal.amountInput}
                     placeholder="0.00"
-                    placeholderTextColor={Colors.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                     keyboardType="decimal-pad"
                     value={amount}
                     onChangeText={setAmount}
@@ -141,7 +150,7 @@ function ActionModal({
                 <TextInput
                   style={modal.noteInput}
                   placeholder="Add a note (optional)"
-                  placeholderTextColor={Colors.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                   value={note}
                   onChangeText={setNote}
                   returnKeyType="done"
@@ -150,10 +159,12 @@ function ActionModal({
                 {isDeposit && parsedAmount > 0 && (
                   <View style={modal.paymentRow}>
                     <TouchableOpacity style={modal.paypalBtn} onPress={openPayPal}>
-                      <Text style={modal.paypalBtnText}>💳 PayPal</Text>
+                      <Ionicons name="card-outline" size={16} color="#fff" />
+                      <Text style={modal.paypalBtnText}>PayPal ${parsedAmount.toFixed(2)}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={modal.venmoBtn} onPress={openVenmo}>
-                      <Text style={modal.venmoBtnText}>💙 Venmo</Text>
+                      <Ionicons name="phone-portrait-outline" size={16} color="#fff" />
+                      <Text style={modal.venmoBtnText}>Venmo ${parsedAmount.toFixed(2)}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -167,7 +178,7 @@ function ActionModal({
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (
-                    <ActivityIndicator color={Colors.white} />
+                    <ActivityIndicator color="#fff" />
                   ) : (
                     <Text style={modal.confirmText}>
                       {isDeposit ? "Add to Goal" : "Withdraw"}
@@ -193,15 +204,15 @@ function ActionModal({
 export default function GoalDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [goal, setGoal] = useState<Goal | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "transactions">(
-    "overview",
-  );
+  const [activeTab, setActiveTab] = useState<"overview" | "transactions">("overview");
   const [modalType, setModalType] = useState<ModalType>(null);
 
   const loadGoal = useCallback(
@@ -241,14 +252,12 @@ export default function GoalDetailScreen() {
           note,
         });
         if (res.goalCompleted) {
-          // Goal is done — cancel all reminders
           await cancelGoalReminder(goal._id);
           Alert.alert(
             "Goal Completed! 🎉",
             `You've reached your savings goal for "${goal.title}"!`,
           );
         } else {
-          // Reset the missed payment nudge timer since they just saved
           await scheduleMissedPaymentNudge({
             _id: goal._id,
             title: goal.title,
@@ -283,7 +292,6 @@ export default function GoalDetailScreen() {
         onPress: async () => {
           try {
             await goalsAPI.delete(token, goal._id);
-            // Cancel notifications so they don't fire for a deleted goal
             await cancelGoalReminder(goal._id);
             router.replace("/(tabs)/goals");
           } catch (err: any) {
@@ -298,17 +306,14 @@ export default function GoalDetailScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <ActivityIndicator
-          color={Colors.primary}
+          color={colors.primary}
           style={{ flex: 1, marginTop: 80 }}
         />
       </SafeAreaView>
     );
   }
 
-  const pct = Math.min(
-    Math.round((goal.currentAmount / goal.targetAmount) * 100),
-    100,
-  );
+  const pct = Math.min(Math.round((goal.currentAmount / goal.targetAmount) * 100), 100);
   const remaining = goal.targetAmount - goal.currentAmount;
 
   return (
@@ -316,7 +321,7 @@ export default function GoalDetailScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
+          <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {goal.title}
@@ -325,7 +330,7 @@ export default function GoalDetailScreen() {
           style={styles.editBtn}
           onPress={() => router.push(`/goal/edit/${goal._id}` as any)}
         >
-          <Ionicons name="create-outline" size={20} color={Colors.primary} />
+          <Ionicons name="create-outline" size={20} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -335,7 +340,7 @@ export default function GoalDetailScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={() => loadGoal(true)}
-            tintColor={Colors.primary}
+            tintColor={colors.primary}
           />
         }
       >
@@ -345,7 +350,7 @@ export default function GoalDetailScreen() {
             <Image source={{ uri: goal.imageUrl }} style={styles.heroImage} />
           ) : (
             <View style={styles.heroImagePlaceholder}>
-              <Text style={styles.heroEmoji}>🎯</Text>
+              <Ionicons name="flag-outline" size={48} color={colors.white} />
             </View>
           )}
           <View style={styles.heroContent}>
@@ -380,11 +385,7 @@ export default function GoalDetailScreen() {
             </View>
             {goal.deadline && (
               <View style={styles.deadlineRow}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={13}
-                  color="rgba(255,255,255,0.7)"
-                />
+                <Ionicons name="calendar-outline" size={13} color="rgba(255,255,255,0.7)" />
                 <Text style={styles.deadlineText}>
                   Due {goal.deadline.split("T")[0]}
                 </Text>
@@ -400,27 +401,21 @@ export default function GoalDetailScreen() {
             onPress={() => setModalType("deposit")}
             disabled={goal.status === "completed"}
           >
-            <Ionicons name="add-circle" size={20} color={Colors.white} />
+            <Ionicons name="add-circle" size={20} color={colors.white} />
             <Text style={styles.actionDepositText}>Add Money</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionSecondary}
             onPress={() => setModalType("withdraw")}
           >
-            <Ionicons
-              name="remove-circle-outline"
-              size={20}
-              color={Colors.primary}
-            />
+            <Ionicons name="remove-circle-outline" size={20} color={colors.primary} />
             <Text style={styles.actionSecondaryText}>Withdraw</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionSecondary}
-            onPress={() =>
-              router.push(`/goal/transfer?from=${goal._id}` as any)
-            }
+            onPress={() => router.push(`/goal/transfer?from=${goal._id}` as any)}
           >
-            <Ionicons name="swap-horizontal" size={20} color={Colors.primary} />
+            <Ionicons name="swap-horizontal" size={20} color={colors.primary} />
             <Text style={styles.actionSecondaryText}>Transfer</Text>
           </TouchableOpacity>
         </View>
@@ -431,13 +426,13 @@ export default function GoalDetailScreen() {
             style={styles.productLink}
             onPress={() => Linking.openURL(goal.productUrl!)}
           >
-            <Ionicons name="cart-outline" size={18} color={Colors.primary} />
+            <Ionicons name="cart-outline" size={18} color={colors.primary} />
             <Text style={styles.productLinkText}>
               {pct >= 100
-                ? "🎉 Ready to buy! Open product link"
+                ? "Ready to buy! Open product link"
                 : "View product you're saving for"}
             </Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+            <Ionicons name="chevron-forward" size={16} color={colors.primary} />
           </TouchableOpacity>
         ) : null}
 
@@ -478,18 +473,70 @@ export default function GoalDetailScreen() {
                 <Text style={styles.statLabel}>Complete</Text>
               </View>
             </View>
+            {/* Payment Plan */}
+            {(() => {
+              const plan = getPaymentPlan(goal);
+              if (!plan && goal.status !== "completed") {
+                return (
+                  <View style={styles.planCard}>
+                    <View style={styles.planCardHeader}>
+                      <Ionicons name="calculator-outline" size={16} color={colors.textSecondary} />
+                      <Text style={styles.planCardTitle}>Payment Plan</Text>
+                    </View>
+                    <Text style={styles.planNoDeadline}>
+                      Add a deadline to this goal to see how much you need to save each {goal.savingPlan === "daily" ? "day" : goal.savingPlan === "biweekly" ? "2 weeks" : "month"}.
+                    </Text>
+                  </View>
+                );
+              }
+              if (!plan) return null;
+              return (
+                <View style={styles.planCard}>
+                  <View style={styles.planCardHeader}>
+                    <Ionicons name="calculator-outline" size={16} color={colors.primary} />
+                    <Text style={styles.planCardTitle}>Payment Plan</Text>
+                  </View>
+                  <View style={styles.planRow}>
+                    <View style={styles.planStat}>
+                      <Text style={styles.planStatValue}>
+                        ${plan.amountPerPeriod.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                      <Text style={styles.planStatLabel}>per {plan.periodLabel}</Text>
+                    </View>
+                    <View style={styles.planDivider} />
+                    <View style={styles.planStat}>
+                      <Text style={styles.planStatValue}>{plan.periodsLeft}</Text>
+                      <Text style={styles.planStatLabel}>
+                        {plan.periodsLeft === 1 ? "payment" : "payments"} left
+                      </Text>
+                    </View>
+                    <View style={styles.planDivider} />
+                    <View style={styles.planStat}>
+                      <Text style={styles.planStatValue}>{formatShortDate(plan.deadlineDate)}</Text>
+                      <Text style={styles.planStatLabel}>deadline</Text>
+                    </View>
+                  </View>
+                  <View style={styles.planNextRow}>
+                    <Ionicons name="alarm-outline" size={13} color={colors.primary} />
+                    <Text style={styles.planNextText}>
+                      Next payment by {formatShortDate(plan.nextDueDate)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
+
             {goal.notes ? (
               <View style={styles.notesCard}>
-                <Text style={styles.notesLabel}>📝 Notes</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                  <Ionicons name="document-text-outline" size={14} color={colors.textSecondary} />
+                  <Text style={styles.notesLabel}>Notes</Text>
+                </View>
                 <Text style={styles.notesText}>{goal.notes}</Text>
               </View>
             ) : null}
             <TouchableOpacity style={styles.dangerBtn} onPress={handleDelete}>
-              <Ionicons
-                name="trash-outline"
-                size={16}
-                color={Colors.secondary}
-              />
+              <Ionicons name="trash-outline" size={16} color={colors.secondary} />
               <Text style={styles.dangerText}>Delete Goal</Text>
             </TouchableOpacity>
           </View>
@@ -500,23 +547,18 @@ export default function GoalDetailScreen() {
                 <View
                   style={[
                     styles.txIcon,
-                    tx.type === "deposit"
-                      ? styles.depositIcon
-                      : styles.withdrawIcon,
+                    tx.type === "deposit" ? styles.depositIcon : styles.withdrawIcon,
                   ]}
                 >
                   <Ionicons
                     name={tx.type === "deposit" ? "arrow-down" : "arrow-up"}
                     size={16}
-                    color={
-                      tx.type === "deposit" ? Colors.success : Colors.secondary
-                    }
+                    color={tx.type === "deposit" ? colors.success : colors.secondary}
                   />
                 </View>
                 <View style={styles.txInfo}>
                   <Text style={styles.txNote}>
-                    {tx.note ||
-                      (tx.type === "deposit" ? "Deposit" : "Withdrawal")}
+                    {tx.note || (tx.type === "deposit" ? "Deposit" : "Withdrawal")}
                   </Text>
                   <Text style={styles.txDate}>
                     {new Date(tx.createdAt).toLocaleDateString()}
@@ -534,7 +576,7 @@ export default function GoalDetailScreen() {
             ))}
             {transactions.length === 0 && (
               <Text style={styles.emptyText}>
-                No transactions yet. Start saving! 🐷
+                No transactions yet. Start saving!
               </Text>
             )}
           </View>
@@ -554,334 +596,387 @@ export default function GoalDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: Colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: Colors.textPrimary,
-    flex: 1,
-    textAlign: "center",
-    marginHorizontal: 8,
-  },
-  editBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: Colors.primaryLight,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heroCard: {
-    marginHorizontal: 20,
-    marginTop: 8,
-    borderRadius: 24,
-    overflow: "hidden",
-    backgroundColor: Colors.primary,
-  },
-  heroImage: { width: "100%", height: 140 },
-  heroImagePlaceholder: {
-    height: 100,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  heroEmoji: { fontSize: 48 },
-  heroContent: { padding: 20 },
-  heroTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  heroTitle: { fontSize: 22, fontWeight: "800", color: Colors.white },
-  heroCat: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.7)",
-    marginTop: 2,
-    textTransform: "capitalize",
-  },
-  completedBadge: {
-    backgroundColor: Colors.success,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  completedText: { color: Colors.white, fontSize: 12, fontWeight: "800" },
-  heroAmount: {
-    fontSize: 46,
-    fontWeight: "800",
-    color: Colors.white,
-    lineHeight: 52,
-  },
-  heroSub: { fontSize: 14, color: "rgba(255,255,255,0.7)", marginBottom: 16 },
-  progressTrack: {
-    height: 10,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderRadius: 5,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: Colors.white,
-    borderRadius: 5,
-  },
-  progressLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  progressLabel: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.75)",
-    fontWeight: "600",
-  },
-  deadlineRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  deadlineText: { fontSize: 13, color: "rgba(255,255,255,0.7)" },
-  actions: {
-    flexDirection: "row",
-    gap: 10,
-    marginHorizontal: 20,
-    marginTop: 16,
-  },
-  actionDeposit: {
-    flex: 2,
-    backgroundColor: Colors.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  actionDepositText: { color: Colors.white, fontWeight: "700", fontSize: 15 },
-  actionSecondary: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  actionSecondaryText: {
-    color: Colors.primary,
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  productLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginHorizontal: 20,
-    marginTop: 14,
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 14,
-    padding: 14,
-  },
-  productLinkText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.primary,
-  },
-  tabs: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    marginTop: 20,
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    padding: 4,
-  },
-  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
-  tabActive: { backgroundColor: Colors.primary },
-  tabText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
-  tabTextActive: { color: Colors.white },
-  tabContent: { marginHorizontal: 20, marginTop: 16 },
-  statsRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: "center",
-  },
-  statValue: { fontSize: 18, fontWeight: "800", color: Colors.textPrimary },
-  statLabel: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  notesCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-  },
-  notesLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Colors.textSecondary,
-    marginBottom: 6,
-  },
-  notesText: { fontSize: 14, color: Colors.textPrimary, lineHeight: 20 },
-  dangerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    justifyContent: "center",
-    paddingVertical: 14,
-  },
-  dangerText: { fontSize: 14, fontWeight: "700", color: Colors.secondary },
-  txRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 8,
-  },
-  txIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  depositIcon: { backgroundColor: "#DCFCE7" },
-  withdrawIcon: { backgroundColor: "#FFE4E6" },
-  txInfo: { flex: 1 },
-  txNote: { fontSize: 14, fontWeight: "700", color: Colors.textPrimary },
-  txDate: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  txAmount: { fontSize: 15, fontWeight: "800", color: Colors.success },
-  withdrawAmount: { color: Colors.secondary },
-  emptyText: {
-    textAlign: "center",
-    color: Colors.textSecondary,
-    fontSize: 14,
-    paddingVertical: 32,
-  },
-});
+function makeStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: c.background },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 8,
+    },
+    backBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: c.surface,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: "#000",
+      shadowOpacity: 0.06,
+      shadowRadius: 6,
+      elevation: 2,
+    },
+    headerTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+      color: c.textPrimary,
+      flex: 1,
+      textAlign: "center",
+      marginHorizontal: 8,
+    },
+    editBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: c.primaryLight,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    heroCard: {
+      marginHorizontal: 20,
+      marginTop: 8,
+      borderRadius: 24,
+      overflow: "hidden",
+      backgroundColor: c.primary,
+    },
+    heroImage: { width: "100%", height: 140 },
+    heroImagePlaceholder: {
+      height: 100,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(255,255,255,0.12)",
+    },
+    heroContent: { padding: 20 },
+    heroTop: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      marginBottom: 12,
+    },
+    heroTitle: { fontSize: 22, fontWeight: "800", color: c.white },
+    heroCat: {
+      fontSize: 13,
+      color: "rgba(255,255,255,0.7)",
+      marginTop: 2,
+      textTransform: "capitalize",
+    },
+    completedBadge: {
+      backgroundColor: c.success,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    completedText: { color: c.white, fontSize: 12, fontWeight: "800" },
+    heroAmount: {
+      fontSize: 46,
+      fontWeight: "800",
+      color: c.white,
+      lineHeight: 52,
+    },
+    heroSub: { fontSize: 14, color: "rgba(255,255,255,0.7)", marginBottom: 16 },
+    progressTrack: {
+      height: 10,
+      backgroundColor: "rgba(255,255,255,0.25)",
+      borderRadius: 5,
+      overflow: "hidden",
+      marginBottom: 8,
+    },
+    progressFill: {
+      height: "100%",
+      backgroundColor: c.white,
+      borderRadius: 5,
+    },
+    progressLabels: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginBottom: 12,
+    },
+    progressLabel: {
+      fontSize: 12,
+      color: "rgba(255,255,255,0.75)",
+      fontWeight: "600",
+    },
+    deadlineRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    deadlineText: { fontSize: 13, color: "rgba(255,255,255,0.7)" },
+    actions: {
+      flexDirection: "row",
+      gap: 10,
+      marginHorizontal: 20,
+      marginTop: 16,
+    },
+    actionDeposit: {
+      flex: 2,
+      backgroundColor: c.primary,
+      borderRadius: 14,
+      paddingVertical: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      shadowColor: c.primary,
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    actionDepositText: { color: c.white, fontWeight: "700", fontSize: 15 },
+    actionSecondary: {
+      flex: 1,
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      borderWidth: 1.5,
+      borderColor: c.border,
+    },
+    actionSecondaryText: {
+      color: c.primary,
+      fontWeight: "700",
+      fontSize: 12,
+    },
+    productLink: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginHorizontal: 20,
+      marginTop: 14,
+      backgroundColor: c.primaryLight,
+      borderRadius: 14,
+      padding: 14,
+    },
+    productLinkText: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: "600",
+      color: c.primary,
+    },
+    tabs: {
+      flexDirection: "row",
+      marginHorizontal: 20,
+      marginTop: 20,
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      padding: 4,
+    },
+    tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
+    tabActive: { backgroundColor: c.primary },
+    tabText: { fontSize: 14, fontWeight: "700", color: c.textSecondary },
+    tabTextActive: { color: c.white },
+    tabContent: { marginHorizontal: 20, marginTop: 16 },
+    statsRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
+    statCard: {
+      flex: 1,
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      padding: 14,
+      alignItems: "center",
+    },
+    statValue: { fontSize: 18, fontWeight: "800", color: c.textPrimary },
+    statLabel: {
+      fontSize: 11,
+      color: c.textSecondary,
+      fontWeight: "600",
+      marginTop: 2,
+    },
+    planCard: {
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      padding: 16,
+      marginBottom: 16,
+      borderWidth: 1.5,
+      borderColor: c.border,
+    },
+    planCardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 14,
+    },
+    planCardTitle: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: c.textPrimary,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    planRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 12,
+    },
+    planStat: { flex: 1, alignItems: "center" },
+    planStatValue: { fontSize: 16, fontWeight: "800", color: c.textPrimary },
+    planStatLabel: { fontSize: 11, color: c.textSecondary, marginTop: 2, fontWeight: "600" },
+    planDivider: { width: 1, height: 36, backgroundColor: c.border },
+    planNextRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: c.primaryLight,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    planNextText: { fontSize: 12, fontWeight: "600", color: c.primary },
+    planNoDeadline: {
+      fontSize: 13,
+      color: c.textSecondary,
+      lineHeight: 19,
+    },
+    notesCard: {
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      padding: 16,
+      marginBottom: 16,
+    },
+    notesLabel: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: c.textSecondary,
+    },
+    notesText: { fontSize: 14, color: c.textPrimary, lineHeight: 20 },
+    dangerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      justifyContent: "center",
+      paddingVertical: 14,
+    },
+    dangerText: { fontSize: 14, fontWeight: "700", color: c.secondary },
+    txRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 8,
+    },
+    txIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 11,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: 12,
+    },
+    depositIcon: { backgroundColor: c.depositBg },
+    withdrawIcon: { backgroundColor: c.withdrawBg },
+    txInfo: { flex: 1 },
+    txNote: { fontSize: 14, fontWeight: "700", color: c.textPrimary },
+    txDate: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+    txAmount: { fontSize: 15, fontWeight: "800", color: c.success },
+    withdrawAmount: { color: c.secondary },
+    emptyText: {
+      textAlign: "center",
+      color: c.textSecondary,
+      fontSize: 14,
+      paddingVertical: 32,
+    },
+  });
+}
 
-const modal = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 28,
-    paddingBottom: 48,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: Colors.border,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: Colors.textPrimary,
-    marginBottom: 4,
-  },
-  subtitle: { fontSize: 14, color: Colors.textSecondary, marginBottom: 24 },
-  amountRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
-  dollarSign: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: Colors.textSecondary,
-    marginRight: 8,
-  },
-  amountInput: {
-    flex: 1,
-    fontSize: 36,
-    fontWeight: "800",
-    color: Colors.textPrimary,
-    borderBottomWidth: 2,
-    borderBottomColor: Colors.primary,
-    paddingBottom: 8,
-  },
-  keyboardDoneBtn: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginLeft: 10,
-  },
-  keyboardDoneText: { color: Colors.primary, fontWeight: "700", fontSize: 14 },
-  noteInput: {
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    color: Colors.textPrimary,
-    marginBottom: 20,
-  },
-  confirmBtn: {
-    backgroundColor: Colors.primary,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  withdrawBtn: { backgroundColor: Colors.secondary },
-  confirmText: { color: Colors.white, fontSize: 16, fontWeight: "800" },
-  cancelBtn: { alignItems: "center", paddingVertical: 10 },
-  cancelText: { fontSize: 15, color: Colors.textSecondary, fontWeight: "600" },
-  paymentRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 14,
-  },
-  paypalBtn: {
-    flex: 1,
-    backgroundColor: "#0070BA",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  paypalBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  venmoBtn: {
-    flex: 1,
-    backgroundColor: "#3D95CE",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  venmoBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-});
+function makeModalStyles(c: ColorPalette) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.45)",
+      justifyContent: "flex-end",
+    },
+    sheet: {
+      backgroundColor: c.surface,
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      padding: 28,
+      paddingBottom: 48,
+    },
+    handle: {
+      width: 40,
+      height: 4,
+      backgroundColor: c.border,
+      borderRadius: 2,
+      alignSelf: "center",
+      marginBottom: 20,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: "800",
+      color: c.textPrimary,
+      marginBottom: 4,
+    },
+    subtitle: { fontSize: 14, color: c.textSecondary, marginBottom: 24 },
+    amountRow: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+    dollarSign: {
+      fontSize: 32,
+      fontWeight: "800",
+      color: c.textSecondary,
+      marginRight: 8,
+    },
+    amountInput: {
+      flex: 1,
+      fontSize: 36,
+      fontWeight: "800",
+      color: c.textPrimary,
+      borderBottomWidth: 2,
+      borderBottomColor: c.primary,
+      paddingBottom: 8,
+    },
+    keyboardDoneBtn: {
+      backgroundColor: c.primaryLight,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      marginLeft: 10,
+    },
+    keyboardDoneText: { color: c.primary, fontWeight: "700", fontSize: 14 },
+    noteInput: {
+      backgroundColor: c.background,
+      borderRadius: 12,
+      padding: 14,
+      fontSize: 15,
+      color: c.textPrimary,
+      marginBottom: 20,
+    },
+    confirmBtn: {
+      backgroundColor: c.primary,
+      borderRadius: 14,
+      paddingVertical: 16,
+      alignItems: "center",
+      marginBottom: 10,
+    },
+    withdrawBtn: { backgroundColor: c.secondary },
+    confirmText: { color: c.white, fontSize: 16, fontWeight: "800" },
+    cancelBtn: { alignItems: "center", paddingVertical: 10 },
+    cancelText: { fontSize: 15, color: c.textSecondary, fontWeight: "600" },
+    paymentRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginBottom: 14,
+    },
+    paypalBtn: {
+      flex: 1,
+      backgroundColor: "#0070BA",
+      borderRadius: 12,
+      paddingVertical: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+    },
+    paypalBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+    venmoBtn: {
+      flex: 1,
+      backgroundColor: "#3D95CE",
+      borderRadius: 12,
+      paddingVertical: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+    },
+    venmoBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  });
+}
