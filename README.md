@@ -27,6 +27,7 @@ Instead of opening a separate bank account, you can just transfer your savings a
 ## Running the app locally
 
 ### Backend
+
 ```bash
 cd backend
 npm install
@@ -34,6 +35,7 @@ npm run dev
 ```
 
 ### Mobile app
+
 ```bash
 cd Oinky
 npm install
@@ -57,3 +59,7 @@ PLAID_CLIENT_ID=your_plaid_client_id
 PLAID_SECRET=your_plaid_secret
 PLAID_ENV=sandbox
 ```
+
+![goaloveriew](./goaloverview.png)
+![goals](./goals.png)
+![addgoal](./addgoal.png)
