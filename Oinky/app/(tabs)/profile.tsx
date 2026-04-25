@@ -3,7 +3,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useMemo, useState, useCallback } from "react";
-import * as Notifications from "expo-notifications";
 import {
   create as plaidCreate,
   open as plaidOpen,
@@ -13,7 +12,6 @@ import {
 } from "react-native-plaid-link-sdk";
 import { useTheme, ColorPalette } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { requestNotificationPermission } from "../../services/notifications";
 import { plaidAPI } from "../../services/api";
 
 export default function ProfileScreen() {
@@ -63,26 +61,6 @@ export default function ProfileScreen() {
         },
       },
     ]);
-  };
-
-  const handleTestNotification = async () => {
-    const granted = await requestNotificationPermission();
-    if (!granted) {
-      Alert.alert("Permission denied", "Enable notifications in Settings.");
-      return;
-    }
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "🐷 Test notification!",
-        body: "Oinky notifications are working correctly.",
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 5,
-        repeats: false,
-      },
-    });
-    Alert.alert("Scheduled!", "A test notification will fire in 5 seconds. Background the app to see it.");
   };
 
   const handleLogout = () => {
@@ -177,15 +155,9 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           )}
           <Text style={styles.bankHint}>
-            Sandbox: use username <Text style={{ fontWeight: "700" }}>user_good</Text> / password <Text style={{ fontWeight: "700" }}>pass_good</Text>
+            Securely connect your bank account powered by Plaid
           </Text>
         </View>
-
-        {/* TEST ONLY — remove before shipping */}
-        <TouchableOpacity style={styles.testBtn} onPress={handleTestNotification}>
-          <Ionicons name="notifications-outline" size={20} color="#fff" />
-          <Text style={styles.testBtnText}>Test Notification (5s)</Text>
-        </TouchableOpacity>
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
@@ -298,16 +270,5 @@ function makeStyles(c: ColorPalette) {
       justifyContent: "center",
     },
     logoutText: { fontSize: 15, fontWeight: "700", color: c.secondary },
-    testBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 10,
-      backgroundColor: c.primary,
-      borderRadius: 14,
-      padding: 16,
-      marginTop: 24,
-    },
-    testBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   });
 }
