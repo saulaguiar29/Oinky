@@ -20,9 +20,14 @@ Instead of opening a separate bank account, you can just transfer your savings a
 ## Tech Stack
 
 - **Frontend:** React Native, Expo, Expo Router
-- **Backend:** Node.js, Express, MongoDB
+- **Backend:** Node.js, Express,Firebase Storage, MongoDB, hosted on Railway
 - **Auth:** Firebase Authentication
 - **Bank Integration:** Plaid API
+- **Services:** Paypal, Venmo
+
+## Component Diagram
+
+![Oinky_component_Diagram](./Oinky_component_Diagram.png)
 
 ## Running the app locally
 
