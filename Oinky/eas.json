@@ -9,7 +9,16 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://oinky-production.up.railway.app/api",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCEZxzRKkKWccMTUd3gzWkRRvC_PWmtD0E",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "oinky-2612d.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "oinky-2612d",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "oinky-2612d.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "664895011864",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:664895011864:web:8bceb4d2c442b17fe6d76d"
+      }
     },
     "production": {
       "autoIncrement": true

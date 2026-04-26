@@ -94,10 +94,9 @@ function ActionModal({
   };
 
   const openVenmo = async () => {
-    const appUrl = `venmo://paycharge?txn=pay&note=Savings&amount=${parsedAmount}`;
     const canOpen = await Linking.canOpenURL("venmo://");
     if (canOpen) {
-      Linking.openURL(appUrl);
+      Linking.openURL("venmo://");
     } else {
       Linking.openURL("https://venmo.com/");
     }

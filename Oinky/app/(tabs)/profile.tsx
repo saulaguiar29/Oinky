@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } fr
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   create as plaidCreate,
   open as plaidOpen,
@@ -21,6 +21,13 @@ export default function ProfileScreen() {
 
   const [isLinked, setIsLinked] = useState(false);
   const [isLinkLoading, setIsLinkLoading] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    plaidAPI.getBalance(token)
+      .then((data) => setIsLinked(data.linked))
+      .catch(() => {});
+  }, [token]);
 
   const handleOpenLink = useCallback(async () => {
     if (!token) return;
